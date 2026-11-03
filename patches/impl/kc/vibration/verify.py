@@ -7,7 +7,7 @@ import struct
 import sys
 
 from paths import OUTPUT
-from analyze_abi import CODE_END, CODE_START, HERE, PWM_META13, ROOT, virtual_loads, vtable
+from analyze_abi import CODE_END, CODE_START, CODE_PADDING, HERE, PWM_META13, ROOT, virtual_loads, vtable
 from transplant import BUNDLE, SPLIT
 from macho import Kernel
 from port import check_region, instructions, sha
@@ -59,13 +59,18 @@ def verify(directory=OUTPUT, input_path=None):
         part, old = ('__TEXT_EXEC', CODE_START) if address < SPLIT else ('__TEXT_EXEC2', SPLIT)
         return by_name[part]['new'] + address - old
 
-    original = instructions(donor.read(CODE_START, CODE_END - CODE_START), CODE_START)
+    original = instructions(donor.read(CODE_START, CODE_END - CODE_START), CODE_START,
+                            padding_words=CODE_PADDING)
     original_by_pc = {x.address: x for x in original}
     actual = {}
     for name, old, end in [('__TEXT_EXEC', CODE_START, SPLIT),
                          ('__TEXT_EXEC2', SPLIT, CODE_END)]:
         address = by_name[name]['new']
-        actual.update({x.address: x for x in instructions(candidate.read(address, end - old), address)})
+        padding = tuple(code_address(p) for p in CODE_PADDING if old <= p < end)
+        actual.update({x.address: x for x in instructions(candidate.read(address, end - old), address,
+                                                       padding_words=padding)})
+        for p in padding:
+            assert candidate.read(p, 4) == bytes(4)
     patches = virtual_loads(original)
     assert len(patches) == 50 and patches == audit['virtual_call_patches']
     for patch in patches:

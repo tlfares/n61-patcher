@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""repair-v6：还原共享缓存去 stub 化的跨库直接分支。
+"""Build repair-v6 by restoring cross-library calls optimized by dyld.
 
-设备上 Health 的 EXC_BAD_ACCESS 根因：dyld 共享缓存把跨库 `bl stub` 优化成
-`bl 分支岛`，分支岛再跳最终热点函数（_objc_retainBlock / _swift_weakLoadStrong 等）。
-抽取成独立 dylib 后这些 `bl` 偏移指向镜像外 → 取指令 translation fault。
-
-全 50 库共 401 条这类分支，最终只落到 7 个符号，且每个符号在所在库里都已有 __stubs 条目。
-本脚本把每条坏 `bl` 重指向库内已有 stub（不新建任何结构），再重签、重建 TrustCache、打包。
-取 repair-v4 已存在的库（含选择子修复）否则取 repair-v3，叠加本修复，输出全 50 库到 repair-v6。
-"""
+The shared cache replaces calls to stubs with branch islands outside the
+extracted image. Those offsets fault after extraction. Resolve each of the
+401 affected calls in 50 libraries to one of seven exported symbols, then
+retarget it to an existing local stub. Reuse selector-fixed repair-v4
+libraries where present and repair-v3 otherwise, then sign and package."""
 import json
 from pathlib import Path
 import re
@@ -29,7 +26,7 @@ CACHE = '/Volumes/YukonH17H35.N66OS/System/Library/Caches/com.apple.dyld/dyld_sh
 
 
 def fix_library(data, cache_base, resolver):
-    """重写镜像外 bl → 库内已有 stub。返回 (新data, 修复数, 未解析列表)。"""
+    """Retarget external bl instructions to local stubs; return (data, fixed count, unresolved)."""
     data = bytearray(data)
     segs, sym2stub = bs.library_stubs(data)
 
@@ -46,7 +43,7 @@ def fix_library(data, cache_base, resolver):
             continue
         stub = sym2stub[symbol]
         disp = stub - addr
-        assert -(1 << 27) <= disp < (1 << 27) and disp % 4 == 0, f'bl 超出范围 @ {addr:#x}'
+        assert -(1 << 27) <= disp < (1 << 27) and disp % 4 == 0, f'bl out of range at {addr:#x}'
         opcode = 0x94000000 | ((disp >> 2) & 0x03ffffff)
         struct.pack_into('<I', data, foff(addr), opcode)
         fixed += 1
@@ -67,9 +64,9 @@ def main():
         if not source.exists():
             source = V3 / 'libraries' / relative
         image = cache.images.get(library)
-        assert image is not None, f'缓存缺少 {library}'
+        assert image is not None, f'Cache is missing {library}'
         data, fixed, unresolved = fix_library(source.read_bytes(), image.address, resolver)
-        assert not unresolved, f'{library}: 未解析分支 {unresolved}'
+        assert not unresolved, f'{library}: unresolved branches {unresolved}'
         total_fixed += fixed
         destination = OUT / 'libraries' / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -86,7 +83,7 @@ def main():
         payloads[relative] = destination
         results[library] = fixed
         if index % 10 == 0:
-            print(f'分支修复 {index}/{len(manifest["cdhashes"])}，累计 {total_fixed} 条。', flush=True)
+            print(f'Branch repairs {index}/{len(manifest["cdhashes"])}; {total_fixed} calls fixed.', flush=True)
 
     for name in ('images', 'bin'):
         shutil.copytree(V4 / name, OUT / name, dirs_exist_ok=True)
@@ -108,7 +105,7 @@ def main():
         subprocess.run(['shasum', '-a', '256',
                         *['images/' + p.name for p in sorted((OUT / 'images').iterdir())],
                         'bin/gaster', 'bin/irecovery', 'boot.sh'], cwd=OUT, check=True, stdout=stream)
-    print(f'repair-v6 完成：修复 {total_fixed} 条跨库分支，{total / 1048576:.1f} MiB。', flush=True)
+    print(f'repair-v6 complete: {total_fixed} cross-library calls fixed, {total / 1048576:.1f} MiB.', flush=True)
 
 
 if __name__ == '__main__':

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""保留 iOS 13 D2207 PMU 驱动，适配 N56 的 D2186 硬件。"""
+"""Keep the iOS 13 D2207 PMU driver and adapt it to N56 D2186 hardware."""
 from pathlib import Path
 
 from core.patch import Patch
 from core.impl import transform
 
-# AppleSamsungSerial UFCON 选择：与 N56 原生内核一致，M8 通信依赖。(文件偏移, 原值, 新值)
+# AppleSamsungSerial UFCON settings match the native N56 kernel for M8 communication. (file offset, old value, new value)
 UART_FIFO = (
     (0x1676cec, "284e8052", "283e8052"),  # mov w8, #0x271 → #0x1f1
     (0x1676cfc, "284c8052", "28388052"),  # mov w8, #0x261 → #0x1c1
@@ -21,7 +21,7 @@ class KcPmuD2186(Patch):
     feature = "pmu"
     scope = "device"
     requires = ('kc.j96_clean',)
-    note = "D2207 PMU 适配 N56：电压表、GPIO 位定义、供电与串口 FIFO"
+    note = "Adapt D2207 PMU to N56: voltages, GPIO bits, power supply and serial FIFO"
 
     def apply(self, ctx, art):
         out = transform(ctx, "kc/pmu_d2186.py", art, "pmu")

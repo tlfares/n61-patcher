@@ -1,16 +1,11 @@
-"""iOS 12.5.8 SSH ramdisk 会话：引导 + iproxy + SSH + 挂卷 + tar 落盘。
+"""iOS 12.5.8 SSH ramdisk boot, USB proxy, remote commands, and file deployment.
 
-移植自 boot_ramdisk.sh / install_ios13.sh / run_rootfs_stream.sh / apfs_setrole.py 的 SSH 语义。
-
-关键约束（全部踩过坑，务必保留）：
-  - 端口 2222→22（iproxy）。密码 alpine。
-  - 挂载点：s1→/mnt1(只读)、s4→/mnt6、s5→/mnt7。
-  - **绝不挂载 s2（iOS12 加密 Data）**：ramdisk 下连只读挂载都会卡死并锁住整个容器，
-    之后对 rdisk0s1 的写入全部 Resource busy，只能重启。
-  - ramdisk 根只读，无 /tmp、ps、df、shasum、dirname；chown 不在 PATH（用 /usr/sbin/chown）。
-  - 远端 tar 后面绝不接 | head：SIGPIPE 会把 tar 中途杀掉，导致 rootfs 不完整。
-  - 设备端解包一律 tar --numeric-owner，否则属主会变成 501:20。
-"""
+Use iproxy 2222 to device port 22; the ramdisk password is alpine. Mount SystemA
+read-only on /mnt1, SystemB on /mnt6, and DataB on /mnt7. Never mount encrypted
+iOS 12 Data (s2): even a read-only mount can hang and lock the APFS container.
+The ramdisk root is read-only and lacks /tmp, ps, df, shasum, and dirname.
+Use /usr/sbin/chown explicitly. Never pipe remote tar into head: SIGPIPE can
+truncate the deployment. Extract with tar --numeric-owner to preserve ownership."""
 import os
 import subprocess
 import time
@@ -36,10 +31,10 @@ class Ramdisk:
             "-p", str(self.port), "root@localhost",
         ]
 
-    # ---- 设备状态 ----
+    # ---- Device state ----
     def dfu_wait(self):
         irecovery = self.ctx.tool("irecovery")
-        log.log("等待设备进入 DFU（关机后按住 Home+电源）…")
+        log.log("Waiting for DFU (use the Home and Power buttons)…")
         while True:
             r = run([irecovery, "-q"], check=False, timeout=10)
             if b"MODE: DFU" in (r.stdout or b""):
@@ -57,9 +52,9 @@ class Ramdisk:
         run([gaster, "reset"], capture=False, check=False)
         time.sleep(1)
 
-    # ---- 引导 ramdisk ----
+    # ---- Boot the ramdisk ----
     def boot(self):
-        """发送 SSHRD 启动链（iBSS→iBEC→ramdisk→DT→TC→KC→bootx），然后起 iproxy。"""
+        """Send the SSHRD boot chain, then start iproxy."""
         rd = self.ctx.t["ramdisk_dir"]
         rd_dir = self.ctx.local(rd)
         irecovery = self.ctx.tool("irecovery")
@@ -69,27 +64,27 @@ class Ramdisk:
 
         self.dfu_ensure()
         self.pwn()
-        log.step(1, 6, "发送 iBSS")
+        log.step(1, 6, "Send iBSS")
         run([irecovery, "-f", img("iBSS")], capture=False); time.sleep(2)
-        log.step(2, 6, "发送 iBEC")
+        log.step(2, 6, "Send iBEC")
         run([irecovery, "-f", img("iBEC")], capture=False); time.sleep(3)
         logo = img("logo")
         if os.path.exists(logo):
             run([irecovery, "-f", logo], capture=False, check=False)
             run([irecovery, "-c", "setpicture 0x1"], capture=False, check=False)
-        log.step(3, 6, "发送 Ramdisk")
+        log.step(3, 6, "Send ramdisk")
         run([irecovery, "-f", img("ramdisk")], capture=False)
         run([irecovery, "-c", "ramdisk"], capture=False); time.sleep(1)
-        log.step(4, 6, "发送 DeviceTree")
+        log.step(4, 6, "Send DeviceTree")
         run([irecovery, "-f", img("devicetree")], capture=False)
         run([irecovery, "-c", "devicetree"], capture=False); time.sleep(1)
-        log.step(5, 6, "发送 TrustCache")
+        log.step(5, 6, "Send TrustCache")
         run([irecovery, "-f", img("trustcache")], capture=False)
         run([irecovery, "-c", "firmware"], capture=False); time.sleep(1)
-        log.step(6, 6, "发送 KernelCache + bootx")
+        log.step(6, 6, "Send KernelCache + bootx")
         run([irecovery, "-f", img("kernelcache")], capture=False)
         run([irecovery, "-c", "bootx"], capture=False)
-        log.log("ramdisk 启动链已发送，等待 SSH 就绪…")
+        log.log("Ramdisk chain sent; waiting for SSH…")
         self.wait_ssh(boot=True)
 
     def dfu_ensure(self):
@@ -102,7 +97,7 @@ class Ramdisk:
     def start_proxy(self):
         if self._proxy and self._proxy.poll() is None:
             return
-        # 复用已有 iproxy；没有则起一个
+        # Reuse an existing iproxy, or start one
         if subprocess.run(["pgrep", "-x", "iproxy"], capture_output=True).returncode == 0:
             return
         self._proxy = subprocess.Popen(
@@ -115,34 +110,34 @@ class Ramdisk:
         for _ in range(tries):
             if self._alive():
                 self.ctx._ssh = self
-                log.log("ramdisk SSH 已连通。")
+                log.log("Ramdisk SSH is ready.")
                 return
             time.sleep(1)
-        log.die("ramdisk SSH 不通" + ("（ramdisk 可能未起来）" if boot else "，先执行 ramdisk 阶段"))
+        log.die("Ramdisk SSH is unavailable" + (" (the ramdisk may not have booted)" if boot else "; run the ramdisk stage first"))
 
     def _alive(self):
         return subprocess.run(self._ssh_base + ["true"], capture_output=True).returncode == 0
 
     def ensure(self):
-        """保证 SSH 可用（iproxy 可能被 rootfs 流式拷贝杀掉）。"""
+        """Ensure SSH is available; rootfs streaming may have stopped iproxy."""
         self.start_proxy()
         if not self._alive():
             self.wait_ssh()
         self.ctx._ssh = self
 
-    # ---- 远端命令 ----
+    # ---- Remote commands ----
     def sh(self, cmd, data=None, check=True, timeout=120):
         r = subprocess.run(self._ssh_base + [cmd], input=data,
                            capture_output=True, timeout=timeout)
         if check and r.returncode != 0:
-            log.die(f"远端命令失败({r.returncode}): {cmd}\n"
+            log.die(f"Remote command failed({r.returncode}): {cmd}\n"
                     f"{(r.stderr or b'').decode(errors='replace')}")
         return r.stdout or b""
 
     def ssh_argv(self):
         return list(self._ssh_base)
 
-    # ---- 挂卷 ----
+    # ---- Mount volumes ----
     def slices(self):
         return self.sh("ls /dev/disk0s1s*").decode(errors="replace").split()
 
@@ -160,26 +155,26 @@ class Ramdisk:
 
     # ---- SEP ----
     def ensure_sep(self):
-        """ramdisk 启动时 SEP 未加载，加密建卷和 systembag 都依赖它。需已只读挂载 /mnt1。"""
+        """Load SEP for encrypted volume creation and systembags; /mnt1 must be mounted read-only."""
         ping = "/usr/libexec/seputil --ping 2>&1"
         if b"ping failed" not in self.sh(ping, check=False):
             return
-        log.log("加载原生 SEP 固件…")
+        log.log("Loading native SEP firmware…")
         self.sh(f'/usr/libexec/seputil --load "{SEP_FIRMWARE}"', check=False)
         if b"ping failed" in self.sh(ping, check=False):
-            log.warn("SEP 加载后仍无响应，后续加密操作可能卡住。")
+            log.warn("SEP is still unresponsive after loading; encryption operations may hang.")
 
-    # ---- tar 落盘 ----
+    # ---- Tar deployment ----
     def deploy_tar_bytes(self, tar_bytes, dest_mnt):
-        """把一段 tar 字节流解包到设备 dest_mnt（保属主）。"""
+        """Extract tar bytes into device dest_mnt, preserving ownership."""
         self.sh(f"/usr/bin/tar --numeric-owner -xpf - -C {dest_mnt}", data=tar_bytes)
 
     def read_tar(self, remote_path_expr):
-        """从设备打包并读回（例如备份）。remote_path_expr 形如 '-C /mnt7 keybags'。"""
+        """Create and retrieve a device archive, for example a backup. remote_path_expr may be '-C /mnt7 keybags'."""
         return self.sh(f"/usr/bin/tar -cf - {remote_path_expr}")
 
     def deploy_path(self, source, dest, uid=None, gid=None):
-        """流式写入本地文件或目录，不生成中间 tar。"""
+        """Stream a local file or directory without an intermediate tar file."""
         source = os.path.abspath(source)
         if os.path.isdir(source):
             self.sh(f'mkdir -p "{dest}"')
@@ -198,13 +193,13 @@ class Ramdisk:
             _, consumer_err = consumer.communicate()
             _, producer_err = producer.communicate()
             if producer.returncode or consumer.returncode:
-                log.die(f"目录流式写入失败: {source} → {dest}\n"
+                log.die(f"Directory streaming failed: {source} → {dest}\n"
                         f"{(producer_err or consumer_err or b'').decode(errors='replace')}")
             return
         self._deploy_file(source, dest)
 
     def deploy_relative_paths(self, root, paths, dest):
-        """从本地 root 流式部署指定相对路径集合，保留目录结构。"""
+        """Stream selected paths relative to root, preserving directory structure."""
         root = os.path.abspath(root)
         paths = list(paths)
         if not paths:
@@ -221,7 +216,7 @@ class Ramdisk:
         _, consumer_err = consumer.communicate()
         _, producer_err = producer.communicate()
         if producer.returncode or consumer.returncode:
-            log.die("文件集流式写入失败\n" +
+            log.die("File set streaming failed\n" +
                     (producer_err or consumer_err or b"").decode(errors="replace"))
 
     def pull_file(self, source, dest):
@@ -230,7 +225,7 @@ class Ramdisk:
             proc = subprocess.run(self._ssh_base + [f'cat "{source}"'], stdout=stream,
                                   stderr=subprocess.PIPE)
         if proc.returncode:
-            log.die(f"读取设备文件失败: {source}\n"
+            log.die(f"Cannot read device file: {source}\n"
                     f"{(proc.stderr or b'').decode(errors='replace')}")
         return dest
 
@@ -240,7 +235,7 @@ class Ramdisk:
             proc = subprocess.Popen(self._ssh_base + [command], stdin=stream, stderr=subprocess.PIPE)
             _, err = proc.communicate()
         if proc.returncode:
-            log.die(f"文件流式写入失败: {source} → {dest}\n"
+            log.die(f"File streaming failed: {source} → {dest}\n"
                     f"{(err or b'').decode(errors='replace')}")
 
     def read_range(self, path, offset, size):

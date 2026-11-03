@@ -43,12 +43,38 @@ def kmod_plan(kmod, source_slots, remap):
         raise ValueError('packed start/stop missing from donor KASLR table')
     return {field: remap(field) for field in fields}, [remap(field) for field in fields[1:]]
 
-def instructions(data, va):
+def instructions(data, va, *, padding_words=()):
+    """Decode all code, allowing only explicitly audited zero alignment words.
+
+    Some merged iOS 12 kexts put a zero word after a tail branch. Older
+    Capstone versions stop there. Do not enable generic skipdata: an unknown
+    instruction elsewhere must still fail relocation.
+    """
     md = Cs(CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN)
     md.detail = True
-    out = list(md.disasm(data, va))
-    if sum(x.size for x in out) != len(data):
+    padding = sorted(set(padding_words))
+    out, cursor = [], 0
+    for address in padding + [va + len(data)]:
+        offset = address - va
+        if offset < cursor or offset > len(data) or offset % 4:
+            raise ValueError(f'invalid ARM64 padding address {address:#x}')
+        block = list(md.disasm(data[cursor:offset], va + cursor))
+        if sum(x.size for x in block) != offset - cursor:
+            raise ValueError(f'incomplete ARM64 disassembly at {va + cursor:#x}')
+        out.extend(block)
+        if address in padding:
+            if data[offset:offset + 4] != bytes(4):
+                raise ValueError(f'nonzero ARM64 padding at {address:#x}')
+            if not block or block[-1].mnemonic not in ('b', 'br', 'ret'):
+                raise ValueError(f'ARM64 padding is reachable by fallthrough at {address:#x}')
+            cursor = offset + 4
+    if sum(x.size for x in out) + 4 * len(padding) != len(data):
         raise ValueError(f'incomplete ARM64 disassembly at {va:#x}')
+    for x in out:
+        if (x.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz')
+                or x.mnemonic.startswith('b.')):
+            if x.operands[-1].imm & MASK in padding:
+                raise ValueError(f'branch into ARM64 padding at {x.address:#x}')
     return out
 
 def register(x, number):
@@ -75,9 +101,9 @@ def encode_pc(word, pc, target, bits, shift, alignment=4):
     mask = ((1 << bits) - 1) << shift
     return (word & ~mask) | (((delta // alignment) & ((1 << bits) - 1)) << shift)
 
-def relocate_code(data, va, remap):
+def relocate_code(data, va, remap, *, padding_words=()):
     """Follow ADRP aliases through the CFG, reject ambiguous/unsupported uses."""
-    ins = instructions(data, va)
+    ins = instructions(data, va, padding_words=padding_words)
     lookup = {x.address: i for i, x in enumerate(ins)}
     out = bytearray(data)
     writes = {}

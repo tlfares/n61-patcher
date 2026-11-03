@@ -1,4 +1,4 @@
-"""下载并校验 checkra1n Loader 使用的 core bootstrap 与 Cydia 包。"""
+"""Download and verify the core bootstrap and Cydia packages used by checkra1n Loader."""
 import hashlib
 from pathlib import Path
 import shutil
@@ -23,14 +23,14 @@ def fetch(url, digest=None):
     path = Path(IPSW_DIR) / "cache/cydia" / url.rsplit("/", 1)[1]
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        log.log(f"下载 {path.name}…")
+        log.log(f"Downloading {path.name}...")
         partial = path.with_suffix(path.suffix + ".part")
         with urllib.request.urlopen(url, timeout=120) as source, partial.open("wb") as dest:
             shutil.copyfileobj(source, dest)
         partial.replace(path)
     if digest and hashlib.sha256(path.read_bytes()).hexdigest() != digest:
         path.unlink()
-        log.die(f"{path.name} 校验失败，已删除")
+        log.die(f"{path.name} failed verification and was removed")
     return path
 
 
@@ -38,16 +38,19 @@ def install(ctx):
     ssh = ctx.ssh
     for url, digest in ARCHIVES:
         archive = fetch(url, digest)
-        log.log(f"解包 {archive.name} → SystemB…")
+        log.log(f"Extracting {archive.name} into SystemB...")
         lzma = subprocess.Popen(["/usr/bin/bsdtar", "-cf", "-", f"@{archive}"], stdout=subprocess.PIPE)
         consumer = subprocess.Popen(ssh.ssh_argv() + ["/usr/bin/tar --numeric-owner -xpf - -C /mnt6"],
                                     stdin=lzma.stdout, stderr=subprocess.PIPE)
         lzma.stdout.close()
         _, err = consumer.communicate()
         if lzma.wait() or consumer.returncode:
-            log.die(f"{archive.name} 解包失败\n{(err or b'').decode(errors='replace')}")
+            log.die(f"Failed to extract {archive.name}\n{(err or b'').decode(errors='replace')}")
     status = fetch(STATUS)
-    with status.open("rb") as stream:
-        ssh.sh("cat >> /mnt6/Library/dpkg/status", data=stream.read())
+    # The core archive's final stanza may have no empty trailing line.
+    # Keep the first Cydia Package field in its own Debian control stanza.
+    core_status = ssh.sh("cat /mnt6/Library/dpkg/status")
+    combined = core_status.rstrip() + b"\n\n" + status.read_bytes().lstrip()
+    ssh.sh("cat > /mnt6/Library/dpkg/status", data=combined)
     ssh.sh(f"touch /mnt6{PENDING}")
     ssh.sync()

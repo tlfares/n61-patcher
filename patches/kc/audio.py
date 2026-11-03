@@ -1,4 +1,4 @@
-"""CS42L67 音频驱动。"""
+"""CS42L67 audio driver."""
 from core.patch import Patch
 from core.impl import transform
 
@@ -13,12 +13,12 @@ class KcAudio(Patch):
         'kc.pmu_d2186',
         'kc.sn2400',
         'kc.chestnut_kext',
-        'kc.mt_n56',
+        'kc.mt_native',
         'kc.wifi',
         'kc.vibration',
         'kc.legacy_sep',
     )
-    note = "CS42L67 音频驱动"
+    note = "CS42L67 audio driver"
 
     def apply(self, ctx, art):
         return transform(ctx, "kc/audio/transplant_audio.py", art, "audio", True)

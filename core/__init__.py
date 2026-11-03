@@ -1,1 +1,1 @@
-"""N56 构建、ramdisk 与系统安装编排。"""
+"""Orchestration for N56/N61 builds, ramdisks, and second-system installation."""

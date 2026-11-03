@@ -5,7 +5,7 @@ from patches.impl.rootfs.backupd_empty_snapshot import build_backupd, SOURCE
 class BackupdEmptySnapshot(SourceOverlay):
     id = "rootfs.backupd_empty_snapshot"
     feature = "core"
-    note = "允许旧 MBS 接口返回无备份标识的空记录"
+    note = "Accept an empty legacy MBS record without a backup identifier"
     items = (
         SourceItem(source="patch:backupd-empty-snapshot", dest=SOURCE,
                    op="patch", depends_on_signing=True,

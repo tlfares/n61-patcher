@@ -91,21 +91,48 @@ def app_machos(n66):
     return result
 
 
-def app_icon_resources(n66, j96):
-    n66, j96 = Path(n66) / "Applications", Path(j96) / "Applications"
+def app_icon_resources(n66, j96, include_apps=()):
+    n66, j96 = Path(n66), Path(j96)
     paths = []
-    for app in sorted(path for path in n66.iterdir()
-                      if path.is_dir() and (j96 / path.name).is_dir()):
-        for source in sorted(app.rglob("*")):
-            if not source.is_file():
-                continue
-            name = source.name
-            if not (name.startswith("AppIcon") or name == "Assets.car" or
-                    ("Icon" in name and "@3x" in name)):
-                continue
-            relative = source.relative_to(n66)
-            target = j96 / relative
-            if not target.exists() or hashlib.sha256(source.read_bytes()).digest() != \
-                    hashlib.sha256(target.read_bytes()).digest():
-                paths.append((Path("Applications") / relative).as_posix())
+    # Most removable Apple apps live here before first-boot installation;
+    # they later move into /var/containers/Bundle/Application/<UUID>/.
+    for scope in ("Applications", "private/var/staged_system_apps"):
+        root = n66 / scope
+        if not root.is_dir():
+            continue
+        for app in sorted(path for path in root.iterdir()
+                          if path.is_dir() and ((j96 / scope / path.name).is_dir()
+                                               or path.name in include_apps)):
+            for source in sorted(app.rglob("*")):
+                if not source.is_file():
+                    continue
+                name = source.name
+                if not (name.startswith("AppIcon") or name == "Assets.car" or
+                        ("Icon" in name and ("@3x" in name or "@2x" in name))):
+                    continue
+                relative = source.relative_to(n66)
+                target = j96 / relative
+                if not target.exists() or hashlib.sha256(source.read_bytes()).digest() != \
+                        hashlib.sha256(target.read_bytes()).digest():
+                    paths.append(relative.as_posix())
     return paths
+
+
+def ui_resource_items(ctx, paths):
+    """Use matching 2x resources for N61 while retaining the N56 default."""
+    from core.overlay import SourceItem
+
+    profile = ctx.t.get("ui_resource_profile", "n66")
+    root = Path(ctx.mount_rootfs(profile))
+    items = []
+    for path in paths:
+        preferred = path.replace("@3x", "@2x") if profile == "n71" else path
+        if (root / preferred).is_file():
+            source, relative = profile, preferred
+        elif (root / path).is_file():
+            source, relative = profile, path
+        else:
+            source, relative = "n66", path
+        items.append(SourceItem(source=f"ipsw:{source}:{relative}", dest=relative,
+                                op="copy", depends_on_signing=False))
+    return tuple(items)

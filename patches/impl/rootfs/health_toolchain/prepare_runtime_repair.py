@@ -45,9 +45,9 @@ def check_layout(path):
 def main():
     OUT.mkdir(exist_ok=True)
     source = CacheIndex(Path('/Volumes/YukonH17H35.N66OS') / CACHE)
-    # source=N66：Health 框架从 N66(iPhone)缓存抽取（iPad J96 缺 Health）。
-    # target=J96：设备 SystemB 跑的是 J96(iPad) rootfs 及其共享缓存，跨库绑定锚点/addend
-    # 必须按设备真正运行的 J96 缓存计算。
+    # Extract Health frameworks from the N66 iPhone cache; the J96 iPad cache lacks them.
+    # SystemB uses the J96 iPad rootfs and shared cache; compute binding anchors
+    # and addends against that actual runtime cache.
     target = CacheIndex(Path('/Volumes/YukonH17H35.J81J82J96J97OS') / CACHE)
     libraries = json.loads((FULL / 'library-plan.json').read_text())
     raw = (BASE / 'trustcache.raw').read_bytes()
@@ -80,7 +80,7 @@ def main():
         hashes[library], results[library] = digest, result
         payloads[relative] = destination
         if index % 10 == 0:
-            print(f'动态库已重打 {index}/{len(libraries)}。', flush=True)
+            print(f'Rebuilt libraries {index}/{len(libraries)}.', flush=True)
     for name in ('mrm.plist', 'mrm.plist.sig'):
         payloads['System/Library/Caches/com.apple.xpc.launchd/' + name] = OUT / name
     (OUT / 'trustcache.raw').write_bytes(raw)
@@ -104,7 +104,7 @@ def main():
         subprocess.run(['shasum', '-a', '256',
                         *['images/' + p.name for p in sorted((OUT / 'images').iterdir())],
                         'bin/gaster', 'bin/irecovery', 'boot.sh'], cwd=OUT, check=True, stdout=stream)
-    print(f'动态库更正包已准备，{total / 1048576:.1f} MiB。', flush=True)
+    print(f'Runtime library repair package ready, {total / 1048576:.1f} MiB.', flush=True)
 
 
 if __name__ == '__main__':

@@ -373,7 +373,7 @@ def rebuild(source, destination, source_cache, target_cache, image_path):
                 struct.pack_into('<Q', output, position, move(value))
                 rebases.append((index, offset + entry['prefix']))
             elif value & 0x8000000000000000 and any(s['vm'] <= low < s['vm'] + s['size'] for s in old if s['name'] != '__LINKEDIT'):
-                # Swift _StringObject 等缓存预烤的带标志绝对指针：平移低 56 位、保留高字节并登记 rebase。
+                # Relocate low 56 bits of tagged cache pointers, preserve the flag byte, and register a rebase.
                 struct.pack_into('<Q', output, position, (value & 0xFF00000000000000) | move(low))
                 rebases.append((index, offset + entry['prefix']))
     for record in bind_records + weak_records:

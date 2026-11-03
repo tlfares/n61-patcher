@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""D2207 PMU 驱动适配 N56 的 D2186 硬件。
+"""Adapt the D2207 PMU driver to N56 D2186 hardware.
 
-调整 LDO 电压表、供电轨、寄存器和 GPIO 映射/位定义，保持 14 字节事件范围。
-RTC 默认启用，Watchdog personality 默认关闭。
+Adjust LDO voltages, power rails, registers, GPIO mapping and bit definitions
+while keeping the 14-byte event range. RTC is enabled and the watchdog
+personality is disabled by default.
 
-用法：pmu_d2186.py [-n] [-v] [-K] [--keep-watchdog] in.raw [out.raw]
-"""
+Usage: pmu_d2186.py [-n] [-v] [-K] [--keep-watchdog] in.raw [out.raw]"""
 
 import struct
 import sys

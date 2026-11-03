@@ -10,7 +10,7 @@
       "id": "memcpy / memmove",
       "to": "0xfffffff0070b5510",
       "provider": "kernel",
-      "how": "唯一 PC 相对字段屏蔽匹配，前 41 条一致；调用现场为 dst、src、len。",
+      "how": "Unique match after masking PC-relative fields; the first 41 instructions agree. Call arguments are dst, src and len.",
       "target_symbols": [
         "_memcpy",
         "_memmove"
@@ -25,7 +25,7 @@
       "id": "memset",
       "to": "0xfffffff0070b5740",
       "provider": "kernel",
-      "how": "符号 _memset；骨架 30/30",
+      "how": "Symbol _memset; all 30 structural instructions match",
       "target_symbols": [
         "_memset"
       ],
@@ -34,10 +34,10 @@
       ]
     },
     "0xfffffff007680650": {
-      "id": "__stack_chk_fail：以 'Kernel stack memory corruption detected' panic",
+      "id": "__stack_chk_fail: panics with the kernel stack-corruption message",
       "to": "0xfffffff0070c4650",
       "provider": "kernel",
-      "how": "符号 ___stack_chk_fail；panic 串与 xnu 原文一致，语义等价",
+      "how": "Symbol ___stack_chk_fail; the panic string matches XNU and semantics agree",
       "target_symbols": [
         "___stack_chk_fail"
       ],
@@ -59,7 +59,7 @@
       "id": "clock_delay_until(deadline)",
       "to": "0xfffffff0070efa7c",
       "provider": "kernel",
-      "how": "读 cntpct_el0 与 CPU 时钟偏移后比较 deadline，长等待走 assert_wait/thread_block，短等待走 wfe；13 的 thread->cpu_data 偏移为 0x490。",
+      "how": "Reads cntpct_el0 and the CPU clock offset before comparing the deadline. Long waits use assert_wait/thread_block and short waits use wfe; iOS 13 thread->cpu_data offset is 0x490.",
       "target_symbols": [
         "_clock_delay_until"
       ],
@@ -72,7 +72,7 @@
       "id": "clock_interval_to_deadline(interval,scale,out)",
       "to": "0xfffffff0070efd64",
       "provider": "kernel",
-      "how": "纳秒转换乘法常量与三参数一致，结果存入 [x2]；音频调用以 interval=50、scale=1000000 写入对象+0x258。",
+      "how": "The nanosecond conversion constant and three arguments agree, with the result stored at [x2]. Audio passes interval=50 and scale=1000000 and stores the result at object+0x258.",
       "target_symbols": [
         "_clock_interval_to_deadline"
       ],
@@ -84,7 +84,7 @@
       "id": "panic (vararg)",
       "to": "0xfffffff0076a972c",
       "provider": "kernel",
-      "how": "符号 _panic；入口骨架前12条一致",
+      "how": "Symbol _panic; first 12 structural entry instructions match",
       "target_symbols": [
         "_panic"
       ],
@@ -98,7 +98,7 @@
       "id": "kernel_debug(debugid,arg1,arg2,arg3,arg4,arg5)",
       "to": "0xfffffff007491bbc",
       "provider": "kernel",
-      "how": "12/13 入口均从 tpidr_el1 读取 thread id 放入 x5、x6=0，再进入相同五事件参数框架；13 thread id 偏移为 0x440。",
+      "how": "Both versions read the thread ID through tpidr_el1 into x5, set x6=0, then use the same five-event-argument framework. The iOS 13 thread ID offset is 0x440.",
       "target_symbols": [
         "_kernel_debug"
       ],
@@ -144,7 +144,7 @@
       "id": "snprintf(buffer,size,format,...)",
       "to": "0xfffffff0074f5b58",
       "provider": "kernel",
-      "how": "24 条主体保持相同栈变参、字符回调和结尾 NUL 写入；调用现场 buffer=sp+8、size=32、format=%s-intmic。",
+      "how": "The 24-instruction body retains stack varargs, character callback and terminating NUL. The call uses buffer=sp+8, size=32 and format=%s-intmic.",
       "target_symbols": [
         "_snprintf"
       ],
@@ -157,7 +157,7 @@
       "id": "OSMetaClass::OSMetaClass(this,name,super,size)",
       "to": "0xfffffff0075b846c",
       "provider": "kernel",
-      "how": "符号 __ZN11OSMetaClassC2EPKcPKS_j + GOT；骨架一致",
+      "how": "Symbol __ZN11OSMetaClassC2EPKcPKS_j plus GOT; structure matches",
       "target_symbols": [
         "__ZN11OSMetaClassC2EPKcPKS_j"
       ],
@@ -175,7 +175,7 @@
       "id": "OSMetaClassBase::_ptmf2ptf",
       "to": "0xfffffff0075b85dc",
       "provider": "kernel",
-      "how": "唯一屏蔽匹配，完整 5 条指令一致；音频把直接回调地址放入 x1、x2=0，返回值传事件源工厂。",
+      "how": "Unique masked match of all five instructions. Audio passes a direct callback address in x1 and x2=0, then sends the result to the event-source factory.",
       "target_symbols": [
         "__ZN15OSMetaClassBase9_ptmf2ptfEPKS_MS_FvvEm"
       ],
@@ -192,7 +192,7 @@
       "id": "OSMetaClassBase::safeMetaCast(obj,meta)",
       "to": "0xfffffff0075b85f0",
       "provider": "kernel",
-      "how": "符号 __ZN15OSMetaClassBase12safeMetaCastEPKS_PK11OSMetaClass；骨架 19/19",
+      "how": "Symbol __ZN15OSMetaClassBase12safeMetaCastEPKS_PK11OSMetaClass; all 19 structural instructions match",
       "target_symbols": [
         "__ZN15OSMetaClassBase12safeMetaCastEPKS_PK11OSMetaClass"
       ],
@@ -214,7 +214,7 @@
       "id": "OSMetaClass::~OSMetaClass (D2)",
       "to": "0xfffffff0075b8c30",
       "provider": "kernel",
-      "how": "符号 __ZN11OSMetaClassD2Ev；骨架一致",
+      "how": "Symbol __ZN11OSMetaClassD2Ev; structure matches",
       "target_symbols": [
         "__ZN11OSMetaClassD2Ev"
       ],
@@ -246,7 +246,7 @@
       "id": "OSMetaClass::instanceConstructed() const",
       "to": "0xfffffff0075b93c0",
       "provider": "kernel",
-      "how": "符号 __ZNK11OSMetaClass19instanceConstructedEv；骨架 9/9",
+      "how": "Symbol __ZNK11OSMetaClass19instanceConstructedEv; all nine structural instructions match",
       "target_symbols": [
         "__ZNK11OSMetaClass19instanceConstructedEv"
       ],
@@ -264,7 +264,7 @@
       "id": "OSObject::operator delete(void*,size_t)",
       "to": "0xfffffff0075baaa4",
       "provider": "kernel",
-      "how": "符号 __ZN8OSObjectdlEPvm；骨架一致",
+      "how": "Symbol __ZN8OSObjectdlEPvm; structure matches",
       "target_symbols": [
         "__ZN8OSObjectdlEPvm"
       ],
@@ -279,7 +279,7 @@
       "id": "OSObject::operator new(size_t)",
       "to": "0xfffffff0075bab14",
       "provider": "kernel",
-      "how": "符号 __ZN8OSObjectnwEm；骨架一致",
+      "how": "Symbol __ZN8OSObjectnwEm; structure matches",
       "target_symbols": [
         "__ZN8OSObjectnwEm"
       ],
@@ -297,7 +297,7 @@
       "id": "OSArray::withCapacity(capacity)",
       "to": "0xfffffff0075bbe50",
       "provider": "kernel",
-      "how": "12 metaclass 初始化名为 OSArray；两版分配 0x28，调用 initWithCapacity（12 +0xc8 / 13 +0xd0），失败 release、成功返回对象。",
+      "how": "The iOS 12 metaclass initializer names OSArray. Both versions allocate 0x28 bytes, call initWithCapacity (iOS 12 +0xc8 / iOS 13 +0xd0), release on failure and return the object on success.",
       "target_symbols": [
         "__ZN7OSArray12withCapacityEj"
       ],
@@ -316,7 +316,7 @@
       "id": "OSArray::withObjects(objects,count,capacity)",
       "to": "0xfffffff0075bbee8",
       "provider": "kernel",
-      "how": "与 withCapacity 共用 OSArray vtable；三参数转交 initWithObjects（12 +0xd0 / 13 +0xd8）；调用现场为单个对象、count=1、capacity=0。",
+      "how": "Shares the OSArray vtable with withCapacity. Three arguments reach initWithObjects (iOS 12 +0xd0 / iOS 13 +0xd8); this call passes one object, count=1 and capacity=0.",
       "target_symbols": [
         "__ZN7OSArray11withObjectsEPPK8OSObjectjj"
       ],
@@ -339,7 +339,7 @@
       "id": "OSCollectionIterator::withCollection",
       "to": "0xfffffff0075bd720",
       "provider": "kernel",
-      "how": "12 metaclass 初始化名为 OSCollectionIterator；两版分配 0x28、用 collection 调 initWithCollection（12 +0x88 / 13 +0x90）。",
+      "how": "The iOS 12 initializer names OSCollectionIterator. Both allocate 0x28 bytes and call initWithCollection with the collection (iOS 12 +0x88 / iOS 13 +0x90).",
       "target_symbols": [
         "__ZN20OSCollectionIterator14withCollectionEPK12OSCollection"
       ],
@@ -359,7 +359,7 @@
       "id": "OSNumber::withNumber(value,bits)",
       "to": "0xfffffff0075d5a44",
       "provider": "kernel",
-      "how": "12 metaclass 初始化名为 OSNumber；两版分配 0x18、保留 value 与 bits，调用 init(value,bits)（12 +0x70 / 13 +0x78）；音频 bits=64。",
+      "how": "The iOS 12 initializer names OSNumber. Both allocate 0x18 bytes, preserve value and bits, and call init(value,bits) (iOS 12 +0x70 / iOS 13 +0x78). Audio uses bits=64.",
       "target_symbols": [
         "__ZN8OSNumber10withNumberEyj"
       ],
@@ -382,7 +382,7 @@
       "id": "operator new[](size_t)",
       "to": "0xfffffff0075d773c",
       "provider": "kernel",
-      "how": "28 条主体逐段对应，size=0 时统一分配 1 字节，kalloc 后记账并清零；源镜像前一组 0x7cdbf10/0x7cdbf84 是标量 new/delete。",
+      "how": "The 28-instruction bodies correspond block by block, allocate one byte for size=0, and account/zero after kalloc. The preceding source pair 0x7cdbf10/0x7cdbf84 is scalar new/delete.",
       "target_symbols": [
         "__Znam"
       ],
@@ -394,7 +394,7 @@
       "id": "operator delete[](void*)",
       "to": "0xfffffff0075d77ac",
       "provider": "kernel",
-      "how": "完整入口对应：空指针直接返回，读取分配大小、扣除同一计数器、尾跳释放；与 0x7cdbfc4 数组分配器配对。",
+      "how": "The complete entry matches: return for null, read allocation size, decrement the same counter and tail-call free. Paired with array allocator 0x7cdbfc4.",
       "target_symbols": [
         "__ZdaPv"
       ],
@@ -406,7 +406,7 @@
       "id": "OSSymbol::withCString",
       "to": "0xfffffff0075dc0f0",
       "provider": "kernel",
-      "how": "锁住符号表查找、创建 OSSymbol、复制字符串再插入表；12 调 0x7cdff94（分配 length+1 并 memcpy），13 调 OSString::initWithCString=0x75da12c。",
+      "how": "Locks the symbol table, looks up or creates OSSymbol, copies the string and inserts it. iOS 12 calls 0x7cdff94 (allocate length+1 and memcpy); iOS 13 calls OSString::initWithCString=0x75da12c.",
       "target_symbols": [
         "__ZN8OSSymbol11withCStringEPKc"
       ],
@@ -419,7 +419,7 @@
       "id": "_os_log_internal(dso,log,type,format,...)",
       "to": "0xfffffff0075e3394",
       "provider": "kernel",
-      "how": "调用现场均为 Mach header、os_log、type、format 与栈变参；13 包装把 log/type/format/va_list 转交 0x75e33d8，保留空串检查、0x500 过滤和日志默认对象判断。",
+      "how": "Both call sites pass Mach header, os_log, type, format and stack varargs. The iOS 13 wrapper forwards log/type/format/va_list to 0x75e33d8, retaining empty-string checks, the 0x500 filter and default-log-object checks.",
       "target_symbols": [
         "__os_log_internal"
       ],
@@ -445,7 +445,7 @@
       "id": "IOSleep(milliseconds)",
       "to": "0xfffffff0075f82e4",
       "provider": "kernel",
-      "how": "两版完整 3 条包装一致：w1=1000000 后尾跳 delay_for_interval；13 直接入口为 0x75f82e4，尾跳 0x70efbc8。",
+      "how": "All three wrapper instructions match: w1=1000000 followed by a tail call to delay_for_interval. The iOS 13 entry is 0x75f82e4 and tail target is 0x70efbc8.",
       "target_symbols": [
         "_IOSleep"
       ],
@@ -458,7 +458,7 @@
       "id": "IOLog(fmt,...)",
       "to": "0xfffffff0075f830c",
       "provider": "kernel",
-      "how": "符号 _IOLog；调用现场 26 处、格式串+压栈变参",
+      "how": "Symbol _IOLog; 26 call sites with format strings and stack varargs",
       "target_symbols": [
         "_IOLog"
       ],
@@ -479,7 +479,7 @@
       "id": "IOService::isInactive",
       "to": "0xfffffff00761118c",
       "provider": "kernel",
-      "how": "完整 8 条一致，唯一虚槽变化 12 +0x290 / 13 +0x298；返回 getState() & 1。",
+      "how": "All eight instructions agree except the virtual slot: iOS 12 +0x290 / iOS 13 +0x298. Returns getState() & 1.",
       "target_symbols": [
         "__ZNK9IOService10isInactiveEv"
       ],
@@ -491,7 +491,7 @@
       "id": "IOService::registerInterestedDriver",
       "to": "0xfffffff007622518",
       "provider": "kernel",
-      "how": "两版检查 PM 字段 +0x68/+0x60/+0x38、锁 +0xd8、创建 capacity=4 的 OSSet 放入 +0x238、把 interested driver 加入集合。",
+      "how": "Both check PM fields +0x68/+0x60/+0x38, lock +0xd8, create a capacity=4 OSSet at +0x238 and add the interested driver.",
       "target_symbols": [
         "__ZN9IOService24registerInterestedDriverEPS_"
       ],
@@ -503,7 +503,7 @@
       "id": "IOService::deRegisterInterestedDriver",
       "to": "0xfffffff0076226ac",
       "provider": "kernel",
-      "how": "与注册函数相同 PM 结构与锁；从 +0x238 集合移除 driver，并遍历 +0x38 下的 powerInformee 列表。音频传对象+0x198 作 driver。",
+      "how": "Uses the registration function PM structure and lock; removes the driver from the +0x238 set and walks the powerInformee list under +0x38. Audio passes object+0x198 as driver.",
       "target_symbols": [
         "__ZN9IOService26deRegisterInterestedDriverEPS_"
       ],
@@ -515,7 +515,7 @@
       "id": "IOService::acknowledgePowerChange",
       "to": "0xfffffff007622828",
       "provider": "kernel",
-      "how": "唯一前 24 条屏蔽匹配；参数 driver 被 retain 后存入 PM 请求+0x68，请求类型 0x81，返回值保持 IOReturn。",
+      "how": "Unique masked match for the first 24 instructions. Retains driver and stores it at PM request+0x68, uses request type 0x81 and preserves the IOReturn result.",
       "target_symbols": [
         "__ZN9IOService22acknowledgePowerChangeEPS_"
       ],
@@ -528,7 +528,7 @@
       "id": "IOWorkLoop::workLoop",
       "to": "0xfffffff00762bb60",
       "provider": "kernel",
-      "how": "12 metaclass 初始化名为 IOWorkLoop；两版分配 0x48、调用 init（12 +0x60 / 13 +0x68），失败 release。",
+      "how": "The iOS 12 initializer names IOWorkLoop. Both allocate 0x48 bytes, call init (iOS 12 +0x60 / iOS 13 +0x68) and release on failure.",
       "target_symbols": [
         "__ZN10IOWorkLoop8workLoopEv"
       ],
@@ -547,7 +547,7 @@
       "id": "IOInterruptEventSource::interruptEventSource(owner,action,provider,index)",
       "to": "0xfffffff00762d298",
       "provider": "kernel",
-      "how": "12 metaclass 初始化名为 IOInterruptEventSource；分配 0x68，四参数按原顺序调用 init（12 +0xd0 / 13 +0xd8）；音频 provider 与 index=0 对应。",
+      "how": "The iOS 12 initializer names IOInterruptEventSource. Allocates 0x68 bytes and forwards four arguments in order to init (iOS 12 +0xd0 / iOS 13 +0xd8); audio uses its provider and index=0.",
       "target_symbols": [
         "__ZN22IOInterruptEventSource20interruptEventSourceEP8OSObjectPFvS1_PS_iEP9IOServicei"
       ],
@@ -566,7 +566,7 @@
       "id": "IOTimerEventSource::timerEventSource(owner,action)",
       "to": "0xfffffff007631490",
       "provider": "kernel",
-      "how": "12 metaclass 初始化名为 IOTimerEventSource；分配 0x60，固定 options=1 并转交 owner/action 调 init（12 +0x138 / 13 +0x140）。",
+      "how": "The iOS 12 initializer names IOTimerEventSource. Allocates 0x60 bytes, fixes options=1 and forwards owner/action to init (iOS 12 +0x138 / iOS 13 +0x140).",
       "target_symbols": [
         "__ZN18IOTimerEventSource16timerEventSourceEP8OSObjectPFvS1_PS_E"
       ],
@@ -586,7 +586,7 @@
       "id": "AppleARMPlatform::getFunction",
       "to": "0xfffffff005fbe7ac",
       "provider": "com.apple.driver.AppleARMPlatform",
-      "how": "完整 20 条屏蔽匹配；按 name 查对象并调用虚槽 +0x28。",
+      "how": "Complete 20-instruction masked match; looks up an object by name and calls virtual slot +0x28.",
       "target_symbols": [],
       "call_sites": [
         "0xfffffff0086eff3c"
@@ -596,7 +596,7 @@
       "id": "AppleARMIISDevice factory(service,provider)",
       "to": "0xfffffff005fc19c4",
       "provider": "com.apple.driver.AppleARMPlatform",
-      "how": "两版分配 0xc0、调用 IOService::C2(meta)、写 AppleARMIISDevice vtable、调用 instanceConstructed；service/provider 保持两参数顺序，init 虚槽 12 +0x538 / 13 +0x540。",
+      "how": "Both allocate 0xc0 bytes, call IOService::C2(meta), install the AppleARMIISDevice vtable and call instanceConstructed. service/provider keep their order; init slot is iOS 12 +0x538 / iOS 13 +0x540.",
       "target_symbols": [],
       "call_sites": [
         "0xfffffff0086f8834"
@@ -679,7 +679,7 @@
         "0xfffffff0086f8bf0",
         "0xfffffff0086f8e24"
       ],
-      "how": "音频以此地址作为 _os_log_internal 的 log 参数。12 的 0x7cecc30 与 13 的 _os_log_create=0x75e3388 各用三指令返回默认日志对象地址。"
+      "how": "Audio uses this address as the log argument of _os_log_internal. iOS 12 0x7cecc30 and iOS 13 _os_log_create=0x75e3388 each return the default log-object address in three instructions."
     },
     "0xfffffff008a12080": {
       "id": "__stack_chk_guard",
@@ -711,7 +711,7 @@
         "0xfffffff0086f72a0",
         "0xfffffff0086f74cc"
       ],
-      "how": "音频从此地址读取 64 位 stack guard；13 导出 ___stack_chk_guard=0x76eb000。"
+      "how": "Audio reads the 64-bit stack guard here; iOS 13 exports ___stack_chk_guard=0x76eb000."
     },
     "0xfffffff00749c928": {
       "id": "OSData::metaClass pointer",
@@ -725,8 +725,8 @@
         "0xfffffff0086f7f78"
       ],
       "source_class_initializer": "0xfffffff007cba6d0",
-      "how": "旧 RO 槽指向 OSData 的 gMetaClass；名称由源 OSMetaClass 初始化实参确认，13 原生 metaClass 指针槽读回同一目标 gMetaClass。",
-      "resolution": "在注入 RO 段写入 target_pointee，并把旧 LDR 槽地址映射到新槽。"
+      "how": "The old read-only slot points to OSData::gMetaClass. Source initializer arguments confirm its name, and the native iOS 13 metaClass pointer slot reads back the same target gMetaClass.",
+      "resolution": "Write target_pointee into the injected read-only segment and map the old LDR slot address to the new slot."
     },
     "0xfffffff00749d120": {
       "id": "OSNumber::metaClass pointer",
@@ -739,8 +739,8 @@
         "0xfffffff0086f8c9c"
       ],
       "source_class_initializer": "0xfffffff007cd96dc",
-      "how": "旧 RO 槽指向 OSNumber 的 gMetaClass；名称由源 OSMetaClass 初始化实参确认，13 原生 metaClass 指针槽读回同一目标 gMetaClass。",
-      "resolution": "在注入 RO 段写入 target_pointee，并把旧 LDR 槽地址映射到新槽。"
+      "how": "The old read-only slot points to OSNumber::gMetaClass. Source initializer arguments confirm its name, and the native iOS 13 metaClass pointer slot reads back the same target gMetaClass.",
+      "resolution": "Write target_pointee into the injected read-only segment and map the old LDR slot address to the new slot."
     },
     "0xfffffff00749dea8": {
       "id": "IORegistryEntry::metaClass pointer",
@@ -753,8 +753,8 @@
         "0xfffffff0086f85cc"
       ],
       "source_class_initializer": "0xfffffff007d08c28",
-      "how": "旧 RO 槽指向 IORegistryEntry 的 gMetaClass；名称由源 OSMetaClass 初始化实参确认，13 原生 metaClass 指针槽读回同一目标 gMetaClass。",
-      "resolution": "在注入 RO 段写入 target_pointee，并把旧 LDR 槽地址映射到新槽。"
+      "how": "The old read-only slot points to IORegistryEntry::gMetaClass. Source initializer arguments confirm its name, and the native iOS 13 metaClass pointer slot reads back the same target gMetaClass.",
+      "resolution": "Write target_pointee into the injected read-only segment and map the old LDR slot address to the new slot."
     }
   }
 }

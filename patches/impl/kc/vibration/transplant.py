@@ -10,7 +10,7 @@ import sys
 import re
 
 from paths import OUTPUT
-from analyze_abi import (BASELINE, CODE_END, CODE_START, DONOR, HERE, PWM_CTOR13,
+from analyze_abi import (BASELINE, CODE_END, CODE_START, CODE_PADDING, DONOR, HERE, PWM_CTOR13,
                          PWM_DTOR13, PWM_META13, ROOT, analyze, vtable)
 from macho import Kernel
 from port import check_region, encode_pc, patch_plist, relocate_code, sha
@@ -177,7 +177,8 @@ def build(input_path=BASELINE, output_dir=OUTPUT):
         raise ValueError(f'unmapped donor address {address:#x}')
 
     original_code = donor.read(CODE_START, CODE_END - CODE_START)
-    code, code_refs = relocate_code(original_code, CODE_START, remap)
+    code, code_refs = relocate_code(original_code, CODE_START, remap,
+                                    padding_words=CODE_PADDING)
     code = bytearray(code)
     for patch in abi['virtual_call_patches']:
         at = patch['pc'] - CODE_START

@@ -1,9 +1,8 @@
-"""还原 dyld 共享缓存去 stub 化的跨库直接分支。
+"""Restore cross-library direct branches optimized by the dyld shared cache.
 
-共享缓存把跨库 `bl stub` 优化成 `bl 分支岛`，分支岛再跳最终函数。抽取成独立 dylib
-后这些 `bl` 的偏移失效（目标在镜像外）。本模块把每条镜像外 `bl` 解析到最终导出符号，
-再重指向该符号在库内已有的 __stubs 条目。
-"""
+The cache replaces calls to stubs with branch islands outside the extracted
+library. Resolve each external call to its exported symbol, then retarget
+it to the matching existing __stubs entry within that library."""
 import struct
 
 from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
@@ -18,7 +17,7 @@ def _q(data, off):
 
 
 class Resolver:
-    """用源缓存把缓存内地址解析到最终导出符号名。"""
+    """Resolve cached addresses to final exported names using the source cache."""
 
     def __init__(self, cache):
         self.cache = cache
@@ -28,7 +27,7 @@ class Resolver:
                 self.addr2sym.setdefault(addr, bytes(name))
 
     def _follow_island(self, addr, depth=0):
-        """跟随分支岛/stub：adrp x16,#p;{add #o|ldr [x16,#o]};br x16。返回最终代码地址。"""
+        """Follow branch islands and stubs; return the final code address."""
         if depth > 8:
             return addr
         fo = self.cache.file_offset(addr)
@@ -45,9 +44,9 @@ class Resolver:
         return addr
 
     def symbol(self, cache_target):
-        """缓存内分支目标 -> (符号名, addend)。addend!=0 表示落在函数内部。"""
+        """Resolve a cached branch target to (symbol, addend); nonzero addends point inside a function."""
         final = self._follow_island(cache_target)
-        # 入口常是 `b #self+4` 的 veneer，剥一层
+        # Strip a leading branch veneer, often b #self+4.
         if final in self.addr2sym:
             return self.addr2sym[final], 0
         fo = self.cache.file_offset(final)
@@ -68,7 +67,7 @@ class Resolver:
 
 
 def library_stubs(data):
-    """库内 符号名 -> __stubs 条目 vm。"""
+    """Map library symbol names to __stubs VM addresses."""
     segs = segments(data)
     dyld = next(p for k, p, _ in commands(data) if k == 0x80000022)
     imports = {}
@@ -97,7 +96,7 @@ def library_stubs(data):
 
 
 def out_of_image_branches(data):
-    """返回 [(指令vm, 目标vm(镜像外))]，目标为库内 vm 空间下的越界值。"""
+    """Return (instruction VM, external target VM) pairs in the library VM address space."""
     segs = segments(data)
     span = max(s['vm'] + s['size'] for s in segs)
     tsec = next((sc for s in segs for sc in s['sections'] if sc['name'] == '__text'), None)

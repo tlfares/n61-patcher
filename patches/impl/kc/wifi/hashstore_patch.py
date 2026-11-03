@@ -10,7 +10,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2]))
-from paths import DERIVED, INPUT as BASELINE, N56
+from paths import DERIVED, INPUT as BASELINE, N56, NATIVE_BOARD
 sys.path.insert(0, str(HERE.parent / 'sn2400'))
 from macho import Kernel
 from port import check_region
@@ -68,7 +68,7 @@ def semantic(record):
 
 
 def native_files():
-    firmware = DERIVED / 'wifi'
+    firmware = DERIVED / 'wifi' / NATIVE_BOARD
     result = {}
     for name in OLD_HASHES:
         data = (firmware / name).read_bytes()
@@ -90,7 +90,7 @@ def adapt(k, files=None, storage=STORAGE):
         item = files[name]
         if old['digest'].hex() != OLD_HASHES[name]:
             raise ValueError('unexpected original approved digest: ' + name)
-        if old['length'] != item['bytes']:
+        if NATIVE_BOARD != 'n61' and old['length'] != item['bytes']:
             raise ValueError('native firmware length differs from the approved B1 image')
         blob = storage + i * 36
         struct.pack_into('<I', data, k.offset(blob), 32)
@@ -109,19 +109,26 @@ def adapt(k, files=None, storage=STORAGE):
             if sum(r['value'] == old['value'] for r in before.values()) != 1:
                 raise ValueError('unexpected shared value for regulatory/TxCap data')
             link, new = old['value'], blob
+        if NATIVE_BOARD == 'n61':
+            # For the shared .trx record, update only the cloned value so
+            # the other hashstore keys keep their original metadata.
+            value_record = new if i == 0 else link
+            struct.pack_into('<I', data, k.offset(value_record + 12), item['bytes'])
         if link not in native_slots:
             raise ValueError('edited pointer lacks native slide ownership')
         prior = struct.unpack('<Q', k.read(link, 8))[0]
         struct.pack_into('<Q', data, k.offset(link), new)
         edits.append(dict(name=name, pointer_slot=link, old_pointer=prior, new_pointer=new,
-                          old_digest=old['digest'].hex(), new_digest=item['sha256'], length=old['length']))
+                          old_digest=old['digest'].hex(), new_digest=item['sha256'],
+                          old_length=old['length'], new_length=item['bytes']))
     after = read_index(ByteView(k, data))
     changed = {key for key in before if semantic(before[key]) != semantic(after[key])}
     if changed != {path_key(name) for name in names}:
         raise ValueError('adaptation changed an unrelated firmware mapping')
     for name, item in files.items():
         if after[path_key(name)]['digest'].hex() != item['sha256']:
-            raise ValueError('native filename mapping mismatch')
+            raise ValueError(f'native filename mapping mismatch: {name}; '
+                             f"got {after[path_key(name)]['digest'].hex()}, expected {item['sha256']}")
     return data, dict(storage=storage, storage_size=0x98, edits=edits,
                       new_slide_slots=[storage + 0x80, storage + 0x90],
                       unchanged_filename_mappings=len(before) - len(changed))

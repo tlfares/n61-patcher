@@ -42,7 +42,7 @@ def main():
             raw = trust_cache(raw, bytes.fromhex(digest))
             payloads[relative], repairs[library] = destination, patches
         if index % 10 == 0:
-            print(f'选择子已处理 {index}/50。', flush=True)
+            print(f'Selectors processed {index}/50.', flush=True)
     destination = OUT / 'libraries' / LIBRARY
     assert struct.unpack_from('<I', destination.read_bytes(), 0x107afc)[0] == 0xf9449b01
     (OUT / 'trustcache.raw').write_bytes(raw)
@@ -66,9 +66,9 @@ def main():
         subprocess.run(['shasum', '-a', '256',
                         *['images/' + p.name for p in sorted((OUT / 'images').iterdir())],
                         'bin/gaster', 'bin/irecovery', 'boot.sh'], cwd=OUT, check=True, stdout=stream)
-    print(f'选择子修复包已生成：{sum(len(p) for p in repairs.values())} 处，{total / 1048576:.1f} MiB。')
+    print(f'Selector repair package ready: {sum(len(p) for p in repairs.values())} sites, {total / 1048576:.1f} MiB.')
     if unresolved:
-        print('待继续核对：', unresolved)
+        print('Remaining to inspect:', unresolved)
 
 
 if __name__ == '__main__':

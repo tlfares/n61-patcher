@@ -1,4 +1,4 @@
-"""统一彩色日志，沿用 master 脚本的 [*]/[!]/[ERROR] 风格。"""
+"""Colored CLI logging with stable stage markers used by the GUI."""
 import sys
 
 _G, _Y, _R, _N = "\033[0;32m", "\033[1;33m", "\033[0;31m", "\033[0m"
@@ -22,12 +22,12 @@ def step(n, total, msg):
 
 
 def stage(name):
-    """端到端进入子阶段；GUI 靠这一行更新节点，格式改动要同步 gui.py 的 SUB_LINE。"""
+    """Enter a stage. Keep this marker compatible with gui.py SUB_LINE."""
     print(f"[>] {name}", file=sys.stderr, flush=True)
 
 
 class Die(SystemExit):
-    """受控失败：带非零退出码，GUI/CLI 都能捕获。"""
+    """Exit with a nonzero status that both GUI and CLI can detect."""
 
 
 def die(msg):

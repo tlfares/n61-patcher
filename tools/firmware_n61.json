@@ -1,0 +1,45 @@
+{
+  "description": "Exact firmware inputs used by the experimental N61 port. Metadata discovered through api.ipsw.me; SHA-256 verified against local input files. URLs point directly to Apple.",
+  "firmwares": [
+    {
+      "profile": "n61",
+      "identifier": "iPhone7,2",
+      "version": "12.5.8",
+      "build": "16H88",
+      "filename": "iPhone_4.7_12.5.8_16H88_Restore.ipsw",
+      "size": 3032495130,
+      "sha256": "2f6f749bbfa9555cd0fa878258f34696863ebd661e0ecbf773cb37df1ac0862c",
+      "url": "https://updates.cdn-apple.com/2026WinterFCS/fullrestores/047-28352/B80B4A86-C206-4C4F-8D35-65579694AEE9/iPhone_4.7_12.5.8_16H88_Restore.ipsw"
+    },
+    {
+      "profile": "n66",
+      "identifier": "iPhone8,2",
+      "version": "13.7",
+      "build": "17H35",
+      "filename": "iPhone_5.5_13.7_17H35_Restore.ipsw",
+      "size": 3978714893,
+      "sha256": "6e01a87a88559ca4858e36b63befb677d4d6a7286ce6133bfd6a112deee16016",
+      "url": "https://updates.cdn-apple.com/2020SummerFCS/fullrestores/001-42162/0ACFD374-5041-458F-843F-1D07FEA9170D/iPhone_5.5_13.7_17H35_Restore.ipsw"
+    },
+    {
+      "profile": "n71",
+      "identifier": "iPhone8,1",
+      "version": "13.7",
+      "build": "17H35",
+      "filename": "iPhone_4.7_13.7_17H35_Restore.ipsw",
+      "size": 3793569556,
+      "sha256": "fda7542da3ad72e843bdb67835c10a3d6fcec7449d355b24c608b58367f4287e",
+      "url": "https://updates.cdn-apple.com/2020SummerFCS/fullrestores/001-42024/73041E63-F21C-4688-8BF2-3F8FD1C4A34E/iPhone_4.7_13.7_17H35_Restore.ipsw"
+    },
+    {
+      "profile": "j96",
+      "identifier": "iPad5,1",
+      "version": "13.7",
+      "build": "17H35",
+      "filename": "iPad_64bit_TouchID_13.7_17H35_Restore.ipsw",
+      "size": 3694602857,
+      "sha256": "a99f42f2c99b599b3b9357b2d45813dfe909604a78d6fc66c3d8b5f478f4f9d1",
+      "url": "https://updates.cdn-apple.com/2020SummerFCS/fullrestores/001-42206/3E6BC243-4DF0-49DB-95C8-2ECAD2174796/iPad_64bit_TouchID_13.7_17H35_Restore.ipsw"
+    }
+  ]
+}

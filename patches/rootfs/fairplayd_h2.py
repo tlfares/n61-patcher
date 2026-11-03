@@ -5,7 +5,7 @@ from patches.impl.rootfs.mrm import build_mrm
 class FairplaydH2(SourceOverlay):
     id = "rootfs.fairplayd_h2"
     feature = "sep"
-    note = "从 N66 补 fairplayd.H2，并生成生产 mrm 缓存"
+    note = "Copy N66 fairplayd.H2 and generate the production mrm cache"
     items = (
         SourceItem(source="ipsw:n66:usr/sbin/fairplayd.H2", dest="usr/sbin/fairplayd.H2",
                    op="copy", depends_on_signing=True),

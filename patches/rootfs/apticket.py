@@ -5,7 +5,7 @@ class Apticket(SourceOverlay):
     id = "rootfs.apticket"
     feature = "core"
     scope = "device"
-    note = "本机 APTicket → mobileactivationd collectSIK 路径"
+    note = "Native APTicket -> mobileactivationd collectSIK path"
     items = (
         SourceItem(source="derive:im4m", dest="System/Library/Caches/apticket.der",
                    op="copy", depends_on_signing=False,

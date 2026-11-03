@@ -1,18 +1,16 @@
-"""外部工具封装（img4 / iBoot64Patcher / kairos / gaster / irecovery / 内核补丁器）。
-
-工具位于仓库 tools/，路径由目标清单声明。
-"""
+"""Wrappers for img4, boot patchers, gaster, and irecovery.
+Tool paths are declared by the selected target profile."""
 import subprocess
 
 from . import log
 
 
 def run(cmd, data=None, check=True, capture=True, timeout=None, env=None):
-    """统一子进程执行；失败打印 stderr 并受控退出。"""
+    """Run a subprocess; report stderr and exit on failure."""
     r = subprocess.run(cmd, input=data, capture_output=capture, timeout=timeout, env=env)
     if check and r.returncode != 0:
         err = (r.stderr or b"").decode(errors="replace") if capture else ""
-        log.die(f"命令失败({r.returncode}): {' '.join(map(str, cmd))}\n{err}")
+        log.die(f"Command failed({r.returncode}): {' '.join(map(str, cmd))}\n{err}")
     return r
 
 
@@ -23,7 +21,7 @@ class Tools:
     def _t(self, key):
         return self.ctx.tool(key)
 
-    # ---- img4：解压 / 签名 / 替换载荷 ----
+    # ---- img4: extract / personalize / replace payload ----
     def img4_extract(self, inp, out):
         run([self._t("img4"), "-i", inp, "-o", out])
 
@@ -45,14 +43,14 @@ class Tools:
         """trust cache raw -> img4 (rtsc)。"""
         run([self._t("img4"), "-i", raw, "-A", "-T", "rtsc", "-M", self.ctx.im4m(), "-o", out])
 
-    # ---- iBoot 补丁 ----
+    # ---- iBoot patches ----
     def iboot_patch(self, inp, out, bootargs):
         run([self._t("iBoot64Patcher"), inp, out, "-b", bootargs, "-n"])
 
     def kairos(self, inp, out, root_part):
         run([self._t("kairos"), inp, out, "-d", str(root_part)])
 
-    # ---- 内核补丁链 ----
+    # ---- Kernel patch chain ----
     def kplooshfinder(self, inp, out):
         run([self._t("KPlooshFinder"), inp, out])
 
@@ -60,7 +58,7 @@ class Tools:
         run([self._t("Kernel64Patcher"), inp, out, *flags])
 
 
-    # ---- 设备交互 ----
+    # ---- Device interaction ----
     def gaster(self, *args, check=True):
         return run([self._t("gaster"), *args], capture=False, check=check)
 

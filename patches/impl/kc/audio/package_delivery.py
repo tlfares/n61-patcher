@@ -33,11 +33,11 @@ def package():
     for name in ('boot.sh', 'boot.command'):
         (launch / name).chmod(0o755)
     (launch / 'README.md').write_text(
-        '# N56 音频启动包\n\n'
-        '把 N56 送进 DFU，连接 USB，双击 `boot.command`。脚本会完成准备 DFU、'
-        'iBSS、iBEC、DeviceTree、TrustCache 和音频 KC 的发送。\n\n'
-        '终端启动：在本文件夹运行 `bash boot.sh`。仅检查文件：`bash boot.sh --verify`。\n\n'
-        '启动日志保存在 `logs/`。工具和五份镜像已包含在包内。\n')
+        '# N56 audio boot bundle\n\n'
+        'Put the N56 in DFU, connect USB and open `boot.command`. The script prepares DFU and sends '
+        'iBSS, iBEC, DeviceTree, TrustCache and the audio kernelcache.\n\n'
+        'From Terminal, run `bash boot.sh` in this folder. To check files only, use `bash boot.sh --verify`.\n\n'
+        'Boot logs are saved in `logs/`. The tools and all five images are included in this bundle.\n')
     entries = ['boot.sh', 'boot.command', 'bin/gaster', 'bin/irecovery']
     entries += ['images/' + name for name in IMAGES]
     manifest = ''.join(hashlib.sha256((launch / name).read_bytes()).hexdigest()

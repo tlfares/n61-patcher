@@ -9,7 +9,7 @@ class RootfsCydia(Patch):
     scope = "version"
     feature = "checkra1n"
     requires = ("rootfs.base_stream", "rootfs.checkra1n_bootstrap")
-    note = "core bootstrap 与 Cydia；首次开机完成 dpkg 配置"
+    note = "Core bootstrap and Cydia; complete dpkg configuration at first boot"
 
     def apply(self, ctx, art=None):
         ctx.ssh.mount(ctx.t["mounts"]["system_b"], "/mnt6")

@@ -9,9 +9,10 @@ class DtBase(Patch):
     role = "base"
     feature = "core"
     scope = "version"
-    note = "从 N56/N66 原始设备树生成 N56 iOS13 设备树"
+    note = "Generate the native iOS 13 DeviceTree from the native and N66 donor trees"
 
     def apply(self, ctx, art=None):
         run_impl(ctx, "dt/dt_patch.py", ["--repack", ctx.tool("devicetree-repack"),
                                         "--out", ctx.work], output_dir=ctx.work)
-        return ctx.wk("DeviceTree.n56_native.bin")
+        board = ctx.t.get("device", {}).get("board", "n56")
+        return ctx.wk(f"DeviceTree.{board}_native.bin")

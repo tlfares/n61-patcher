@@ -21,7 +21,8 @@ if [ -e /.n56-cydia-pending ]; then
     (
         sleep 30
         mount -uw /
-        /usr/bin/dpkg --configure -a > /var/log/n56-cydia.log 2>&1 &&
+        /bin/bash /usr/libexec/firmware.sh > /var/log/n56-cydia.log 2>&1 &&
+            /usr/bin/dpkg --configure -a >> /var/log/n56-cydia.log 2>&1 &&
             /binpack/usr/bin/uicache -p /Applications/Cydia.app >> /var/log/n56-cydia.log 2>&1 &&
             touch /.bootstrapped && rm -f /.n56-cydia-pending
     ) &

@@ -5,7 +5,7 @@ class Factorydata(SourceOverlay):
     id = "rootfs.factorydata"
     feature = "baseband"
     scope = "device"
-    note = "从本机 SystemA 补 factorydata"
+    note = "Copy native factorydata from SystemA"
     items = (
         SourceItem(source="device_s1:System/Library/Caches/com.apple.factorydata",
                    dest="System/Library/Caches/com.apple.factorydata", op="copy",

@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
-"""把 J96 触摸 personality 改为 N56 的匹配名称、fll-mval 与合并参数。"""
+"""Adapt the J96 touch personality to the N56/N61 matching name and merged parameters."""
 from core.patch import Patch
 from core.impl import transform
 
 
-class KcMtN56(Patch):
-    id = "kc.mt_n56"
+class KcMtNative(Patch):
+    id = "kc.mt_native"
     layer = "kc"
     role = "transform"
     feature = "touch"
     scope = "device"
     requires = ('kc.pmu_d2186', 'kc.chestnut_kext')
-    note = "触摸 personality J96 → N56"
+    note = "Touch personality J96 to N56/N61"
 
     def apply(self, ctx, art):
-        return transform(ctx, "kc/mt_n56.py", art, "mt")
+        board = ctx.t["device"].get("board", "n56")
+        return transform(ctx, "kc/mt_n56.py", art, "mt", extra=("--board", board))

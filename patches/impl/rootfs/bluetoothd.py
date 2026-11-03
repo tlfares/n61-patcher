@@ -22,16 +22,16 @@ def build_bluetoothd(ctx):
     ctx.ssh.pull_file("/mnt1/usr/sbin/bluetoothd", source)
     data = bytearray(open(source, "rb").read())
     if len(data) != manifest["source_size"] or hashlib.sha256(data).hexdigest() != manifest["source_sha256"]:
-        log.die("SystemA bluetoothd 不是 16H88 profile 支持的版本")
+        log.die("SystemA bluetoothd does not match the supported 16H88 profile")
     for edit in manifest["patches"]:
         offset = edit["offset"]
         before = bytes.fromhex(edit["before"])
         after = bytes.fromhex(edit["after"])
         if data[offset:offset + len(before)] != before:
-            log.die(f"bluetoothd patch before 不匹配: 0x{offset:x}")
+            log.die(f"bluetoothd expected bytes do not match at 0x{offset:x}")
         data[offset:offset + len(before)] = after
     if len(data) != manifest["output_size"] or hashlib.sha256(data).hexdigest() != manifest["output_sha256"]:
-        log.die("bluetoothd 生成结果不匹配 xpc13 profile")
+        log.die("Generated bluetoothd does not match the xpc13 profile")
     with open(output, "wb") as stream:
         stream.write(data)
     os.chmod(output, 0o755)

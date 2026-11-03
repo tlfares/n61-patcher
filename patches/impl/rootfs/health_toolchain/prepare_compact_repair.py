@@ -37,7 +37,7 @@ def main():
         raw = trust_cache(raw, bytes.fromhex(digest))
         payloads[relative] = destination
         if index % 10 == 0:
-            print(f'紧凑动态库已生成 {index}/50。', flush=True)
+            print(f'Compacted libraries {index}/50.', flush=True)
     for name in ('mrm.plist', 'mrm.plist.sig', 'cache-source.plist', 'boot.sh'):
         shutil.copy2(BASE / name, OUT / name)
     for name in ('mrm.plist', 'mrm.plist.sig'):
@@ -59,7 +59,7 @@ def main():
         subprocess.run(['shasum', '-a', '256',
                         *['images/' + p.name for p in sorted((OUT / 'images').iterdir())],
                         'bin/gaster', 'bin/irecovery', 'boot.sh'], cwd=OUT, check=True, stdout=stream)
-    print(f'repair-v3 已生成，{total / 1048576:.1f} MiB。', flush=True)
+    print(f'repair-v3 generated, {total / 1048576:.1f} MiB.', flush=True)
 
 
 if __name__ == '__main__':

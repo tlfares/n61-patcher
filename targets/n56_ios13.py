@@ -1,38 +1,39 @@
 # -*- coding: utf-8 -*-
-"""iPhone 6 Plus (N56AP) × iOS 13.7：本地 donor 与完整 KC 构建链。"""
+"""iPhone 6 Plus (N56AP) / iOS 13.7: local donors and the complete KC build chain."""
 
 TARGET = {
     "name": "n56-ios13",
     "source_root": "donors",
 
-    # ===================== 设备级常量（跨 iOS 版本不变）=====================
+    # ===================== Device constants (independent of the iOS version)=====================
     "device": {
         "model": "n56ap",
         "product": "iPhone7,1",
+        "board": "n56",
         "ecid": "",
-        "udid": "acf519ceb4a8a1434979cf9aaebef3899df5ccd0",
+        "udid": "",
         "pmu": "d2186",
         "touch": "multi-touch,n56",
         "codec": "CS42L67",
         "charger": "SN2400",
     },
-    # 第二系统根分区号：s4。kairos 把 iBEC 的 root-matching 改成 disk0s1s4。
+    # Second-system root is s4. kairos changes iBEC root-matching to disk0s1s4.
     "root_part": 4,
-    # 卷布局：建 s4=SystemB / s5=DataB（role 0），最后改 role。
+    # Create s4=SystemB / s5=DataB with role 0, then assign roles at the end.
     "volumes": {
         "create": ["SystemB", "DataB"],
-        "roles": {3: 0x80, 4: 0x1, 5: 0x40},     # s4=System, s5=Data（0x1/0x40 在容器内唯一）
+        "roles": {3: 0x80, 4: 0x1, 5: 0x40},     # s4=System, s5=Data (0x1/0x40 roles must be unique in the container)
     },
-    # 第二系统 Data 默认启用内容保护。
+    # Content protection is enabled for second-system Data by default.
     "data_protection": "encrypted",
     "mounts": {"system_b": 4, "data_b": 5, "system12": 1},   # device slices mounted at /mnt6, /mnt7, /mnt1
 
     "ramdisk_port": 2222,
     "ramdisk_password": "alpine",
-    "ramdisk_dir": "tools/SSHRD_Script/sshramdisk",       # iOS12.5.8 SSHRD 镜像
+    "ramdisk_dir": "tools/SSHRD_Script/sshramdisk",       # iOS 12.5.8 SSHRD images
 
-    # ===================== 版本级常量（随 iOS 版本变）=====================
-    # 成功启动链的 boot-args（debug=0x2014e、amfi/cs 放行、root=disk0s1s4）
+    # ===================== Version-specific constants=====================
+    # Boot arguments from the working chain (debug=0x2014e, permissive AMFI/CS, root=disk0s1s4)
     "bootargs": "rd=disk0s1s4 -v amfi_get_out_of_my_way=1 "
                 "cs_enforcement_disable=1 wdt=-1 debug=0x2014e",
     "source_profiles": {
@@ -43,7 +44,7 @@ TARGET = {
                 "ipsw": "iPad_64bit_TouchID_13.7_17H35_Restore.ipsw"},
     },
 
-    # ===================== 工具链（仓库 tools/）=====================
+    # ===================== Toolchain (repository tools/)=====================
     "tools": {
         "img4": "tools/img4lib/img4",
         "devicetree-repack": "tools/devicetree-parse/devicetree-repack",
@@ -57,15 +58,15 @@ TARGET = {
         "kairos": "tools/dualra1n/binaries/Darwin/kairos",
     },
 
-    # ===================== donor 源（本地 donors/）=====================
+    # ===================== Donor inputs (local donors/)=====================
     "donors": {
-        "apfs14": "projects/dualra1n-bin/apfsios14",              # iOS14 的 fsck + apfs.fs
-        "sys12_mount_hint": "disk0s1s1",   # SEP 固件 / N56 机型文件来源（s1 只读挂）
+        "apfs14": "projects/dualra1n-bin/apfsios14",              # iOS 14 fsck + apfs.fs
+        "sys12_mount_hint": "disk0s1s1",   # SEP firmware / N56 model-file source (mount s1 read-only)
     },
 
-    # ===================== 从 IPSW 生成（ipsw/cache/derived）=====================
+    # ===================== Generated from IPSWs (ipsw/cache/derived)=====================
     "derived": {
-        "ibss_src": "extracted/n56ap_ios12/iBSS.n56.patched",  # 首次需 DFU 解密
+        "ibss_src": "extracted/n56ap_ios12/iBSS.n56.patched",  # First extraction requires DFU decryption
         "ibec_dec": "extracted/n56ap_ios12/iBEC.n56.dec",
         "j96_kernel": "extracted/j96ap_ios13/kernelcache.release.ipad5",
         "trustcache": "extracted/j96ap_ios13/038-68261-036.dmg.trustcache",
@@ -81,8 +82,8 @@ TARGET = {
         "eff0e0b43afd6e72cfd81fda04325ce4282d9824",  # healthappd
     ],
 
-    # ===================== patch 选挂 =====================
-    # base：每层（dt/kc）选且仅选一个。
+    # ===================== Patch selection =====================
+    # Select exactly one base for each layer (dt/kc).
     "bases": {
         "dt": "dt.base",
         "kc": "kc.j96_clean",
@@ -90,20 +91,20 @@ TARGET = {
     # Features select the default full build; --patches overrides KC alone.
     "features": [
         "pmu", "touch", "charging", "chestnut", "wifi", "vibration", "audio",
-        "core",       # rootfs 流写 + finish + 改 role + N56 机型文件（启动必备）
-        "ui",         # 图标/键盘/控制中心/SpringBoard/设置 3× 图标
-        "bluetooth",  # 12→13 蓝牙用户态
+        "core",       # rootfs stream, finalization, roles and N56 model files (required to boot)
+        "ui",         # icons, keyboard, Control Center, SpringBoard and Settings 3x icons
+        "bluetooth",  # iOS 12 to 13 Bluetooth userland
         "baseband",   # factorydata + CommCenter + Mav10 + Carrier Bundles
-        "sep",        # SEP 固件（boot 必备）+ fairplayd.H2
-        "health",     # 健康 App 框架 repair-v7
-        "checkra1n",  # 离线 KPF、用户态工具与 USB SSH
+        "sep",        # SEP firmware (required to boot) + fairplayd.H2
+        "health",     # Health app frameworks repair-v7
+        "checkra1n",  # offline KPF, userland tools and USB SSH
     ],
-    # 显式追加的 patch id（不靠 feature）
+    # Explicit additional patch IDs (independent of features)
     "patches": [],
-    # 排除
+    # Exclusions
     "exclude": [],
 
-    # ===================== 启动链发送顺序 =====================
+    # ===================== Boot-chain transmission order =====================
     # gaster pwn/reset → iBSS → iBEC → DT(devicetree) → TC(firmware) → KC → bootx
     "boot_chain": ["iBSS", "iBEC", "DeviceTree", "TrustCache", "KernelCache"],
 }

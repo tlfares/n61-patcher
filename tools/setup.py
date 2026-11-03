@@ -73,7 +73,7 @@ def setup():
 
     run(sys.executable, "-m", "pip", "install", "-q", "--target", "tools/bin/pydeps",
         "progressbar2", "typing_extensions")
-    print("工具已就绪：tools/SSHRD_Script/Darwin、tools/dualra1n/binaries/Darwin、tools/img4lib/img4、donors/")
+    print("Tools ready: tools/SSHRD_Script/Darwin、tools/dualra1n/binaries/Darwin、tools/img4lib/img4、donors/")
 
 
 if __name__ == "__main__":

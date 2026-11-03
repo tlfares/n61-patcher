@@ -1,13 +1,7 @@
-"""运行上下文：加载目标清单、解析路径、提供 SSH/工具/工作目录。
+"""Shared runtime context: target profile, firmware paths, tools, and SSH.
 
-Context 是所有 patch 和阶段共享的句柄：
-  - ctx.t         目标清单（dict，来自 targets/<name>.py 的 TARGET）
-  - ctx.src(rel)  本地 donor 目录下的绝对路径
-  - ctx.tool(key) 工具二进制绝对路径
-  - ctx.donor(k)  donor 源绝对路径
-  - ctx.work/...  本次运行的工作目录(产物落这里，不碰证据源)
-  - ctx.ssh(...)  ramdisk SSH（经 core.ramdisk 注入）
-"""
+ctx.t holds the target dictionary; ctx.src/ctx.tool/ctx.donor resolve inputs.
+ctx.work contains generated outputs. core.ramdisk injects the SSH session."""
 import importlib.util
 import hashlib
 import json
@@ -23,28 +17,28 @@ from . import log
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # n56-patcher/
 TARGETS_DIR = os.path.join(REPO, "targets")
-IPSW_DIR = os.path.join(REPO, "ipsw")     # 用户自行下载的 IPSW，不进 Git
-DERIVED_DIR = os.path.join(IPSW_DIR, "cache", "derived")   # 从 IPSW 生成的构建输入
-STATE_DIR = os.path.join(REPO, "state")   # 本机运行态产物（刷机后重提的 IM4M 等），不碰只读证据源
+IPSW_DIR = os.path.join(REPO, "ipsw")     # User-downloaded IPSWs; excluded from Git
+DERIVED_DIR = os.path.join(IPSW_DIR, "cache", "derived")   # Build inputs derived from IPSWs
+STATE_DIR = os.path.join(REPO, "state")   # Local device state, including the ticket extracted after a restore
 
 
 def load_target(name):
-    """按名字加载 targets/<name>.py，返回其 TARGET dict。"""
+    """Load targets/<name>.py and return its TARGET dictionary."""
     if os.path.isabs(name):
         path = name if name.endswith(".py") else name + ".py"
     else:
-        # 目标名允许连字符(n56-ios13)，文件名用下划线(n56_ios13.py)
+        # Target names allow hyphens (n56-ios13); filenames use underscores (n56_ios13.py)
         fn = name if name.endswith(".py") else name + ".py"
         path = os.path.join(TARGETS_DIR, fn)
         if not os.path.exists(path):
             path = os.path.join(TARGETS_DIR, fn.replace("-", "_"))
     if not os.path.exists(path):
-        log.die(f"找不到目标清单: {path}")
+        log.die(f"Target profile not found: {path}")
     spec = importlib.util.spec_from_file_location("n56_target", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     if not hasattr(mod, "TARGET"):
-        log.die(f"{path} 未定义 TARGET")
+        log.die(f"{path} does not define TARGET")
     t = mod.TARGET
     t.setdefault("_path", path)
     return t
@@ -59,7 +53,7 @@ class Context:
         self.source_root = src if os.path.isabs(src) else os.path.join(REPO, src)
         self.source_root = os.path.normpath(self.source_root)
         if not os.path.isdir(self.source_root):
-            log.die(f"donor 目录不存在: {self.source_root}")
+            log.die(f"Donor directory does not exist: {self.source_root}")
 
         self.derived_root = DERIVED_DIR
 
@@ -67,59 +61,64 @@ class Context:
                                             f"{self.t['name']}-{time.strftime('%Y%m%d-%H%M%S')}")
         self.work = os.path.abspath(self.work)
         os.makedirs(self.work, exist_ok=True)
-        self._ssh = None   # 由 core.ramdisk 建立会话后注入
+        self._ssh = None   # Injected after core.ramdisk establishes a session
         self._source_mounts = {}
         self._input_hashes = {}
         self._device_system_verified = False
 
-    # ---- 路径解析 ----
+    # ---- Path resolution ----
     def src(self, rel):
-        """本地 donor 目录下的绝对路径。"""
+        """Absolute path inside the local donor directory."""
         p = os.path.join(self.source_root, rel)
         return p
 
     def req(self, rel):
-        """同 src，但不存在直接报错（必需文件）。"""
+        """Resolve a required donor path; fail if it does not exist."""
         p = self.src(rel)
         if not os.path.exists(p):
-            log.die(f"缺少必需文件: {p}")
+            log.die(f"Missing required file: {p}")
         return p
 
     def tool(self, key):
         rel = self.t["tools"].get(key)
         if rel is None:
-            log.die(f"目标清单未声明工具: {key}")
+            log.die(f"Tool is not declared by the target: {key}")
         if isinstance(rel, (list, tuple)):
             for candidate in rel:
                 path = os.path.join(REPO, candidate)
                 if os.path.exists(path):
                     return path
-            log.die(f"缺少工具 {key}: {', '.join(rel)}")
+            log.die(f"Missing tool {key}: {', '.join(rel)}")
         return self.local(rel)
 
     def local(self, rel):
-        """仓库内源码或工具路径。"""
+        """Path to a source file or tool in this repository."""
         path = os.path.join(REPO, rel)
         if not os.path.exists(path):
-            log.die(f"缺少本地文件: {path}")
+            log.die(f"Missing local file: {path}")
         return path
 
     def ensure_derived(self):
-        """缺少从 IPSW 生成的输入时，现场生成。"""
+        """Generate missing derived inputs from local IPSWs."""
         sys.path.insert(0, os.path.join(REPO, "tools"))
         try:
             import extract_ipsw
         finally:
             sys.path.pop(0)
-        if all(os.path.exists(os.path.join(DERIVED_DIR, rel)) for rel in extract_ipsw.OUTPUTS):
+        native = self.t.get("native_profile", "n56")
+        outputs = extract_ipsw.native_outputs(native) + extract_ipsw.SHARED_OUTPUTS
+        if all(os.path.exists(os.path.join(DERIVED_DIR, rel)) for rel in outputs):
             return
-        log.log("从 IPSW 生成构建输入…")
-        extract_ipsw.generate(self.ipsw_input("n56"), self.ipsw_input("n66"), self.ipsw_input("j96"))
+        log.log("Generating build inputs from IPSWs…")
+        rootfs_entry = self.t.get("source_profiles", {}).get(native, {}).get("rootfs_entry")
+        extract_ipsw.generate(self.ipsw_input(native), self.ipsw_input("n66"),
+                              self.ipsw_input("j96"), native_board=native,
+                              rootfs_entry=rootfs_entry)
 
     def derived(self, key):
         rel = self.t["derived"].get(key)
         if rel is None:
-            log.die(f"目标清单未声明派生输入: {key}")
+            log.die(f"Derived input is not declared by the target: {key}")
         path = os.path.join(DERIVED_DIR, rel)
         if key in ("ibss_src", "ibec_dec"):
             if not os.path.exists(path):
@@ -134,32 +133,35 @@ class Context:
             import extract_ipsw
         finally:
             sys.path.pop(0)
-        log.log("解密 iBSS/iBEC：设备需处于 DFU…")
-        extract_ipsw.decrypt_iboot(self.ipsw_input("n56"), self.tool("gaster"), self.tool("iBoot64Patcher"))
+        log.log("Decrypting iBSS/iBEC: the device must be in DFU…")
+        native = self.t.get("native_profile", "n56")
+        extract_ipsw.decrypt_iboot(self.ipsw_input(native), self.tool("gaster"),
+                                   self.tool("iBoot64Patcher"),
+                                   board=self.t.get("device", {}).get("board", native))
 
     def donor(self, key):
         if key in self.t.get("derived", {}):
             return self.derived(key)
         rel = self.t["donors"].get(key)
         if rel is None:
-            log.die(f"目标清单未声明 donor: {key}")
+            log.die(f"Donor is not declared by the target: {key}")
         return self.req(rel)
 
     def im4m(self):
-        """本次设备的 IM4M(state/IM4M.bin)。
+        """This device's IM4M (state/IM4M.bin).
 
-        ⚠ 刷机后 onboard APTicket 变化，所有启动组件用 -M 签名；务必先 extract-im4m。
+        The onboard APTicket changes after a restore. Run extract-im4m before personalizing components with -M.
         """
         local = os.path.join(STATE_DIR, "IM4M.bin")
         if not os.path.exists(local):
-            log.die("缺少 state/IM4M.bin：请先运行 extract-im4m")
+            log.die("Missing state/IM4M.bin: run extract-im4m first")
         return local
 
     def im4m_is_fresh(self):
         return os.path.exists(os.path.join(STATE_DIR, "IM4M.bin"))
 
     def wk(self, name):
-        """工作目录下的路径（产物）。"""
+        """Path to a generated output in the working directory."""
         return os.path.join(self.work, name)
 
     def set_ipsw_input(self, kind, path):
@@ -170,21 +172,21 @@ class Context:
         if not path:
             name = self.t.get("source_profiles", {}).get(kind, {}).get("ipsw")
             if not name:
-                log.die(f"{kind} profile 未声明 ipsw 文件名")
+                log.die(f"{kind} profile does not declare an IPSW filename")
             path = os.path.join(IPSW_DIR, name)
         if not os.path.isfile(path):
-            log.die(f"找不到 {kind} IPSW: {path}")
+            log.die(f"Cannot find {kind} IPSW: {path}")
         expected = self.t.get("source_profiles", {}).get(kind, {})
         with zipfile.ZipFile(path) as archive:
             try:
                 restore = plistlib.loads(archive.read("Restore.plist"))
             except KeyError:
-                log.die(f"{kind} 输入不是有效 IPSW: {path}")
+                log.die(f"{kind} input is not a valid IPSW: {path}")
         build = restore.get("ProductBuildVersion")
         if build is None:
             build = restore.get("BuildIdentities", [{}])[0].get("Info", {}).get("BuildNumber")
         if expected.get("build") and build != expected["build"]:
-            log.die(f"{kind} IPSW build 为 {build}，当前 profile 需要 {expected['build']}")
+            log.die(f"{kind} IPSW build is {build}; this profile requires {expected['build']}")
         self._record_input_hash(kind + "_ipsw", path)
         return path
 
@@ -203,10 +205,10 @@ class Context:
         return value
 
     def rootfs_dmg(self, kind):
-        """rootfs DMG：优先用 ipsw/cache/，否则从 IPSW 提取到该目录。"""
+        """Use a cached rootfs DMG, or extract it from the IPSW into ipsw/cache/."""
         entry = self.t.get("source_profiles", {}).get(kind, {}).get("rootfs_entry")
         if not entry:
-            log.die(f"{kind} profile 未声明 rootfs_entry")
+            log.die(f"{kind} profile does not declare rootfs_entry")
         donor_key = kind + "_rootfs_dmg"
         directory = os.path.join(IPSW_DIR, "cache")
         path = os.path.join(directory, os.path.basename(entry))
@@ -219,8 +221,8 @@ class Context:
             try:
                 info = archive.getinfo(entry)
             except KeyError:
-                log.die(f"{kind} IPSW 中没有 {entry}")
-            log.log(f"从 {kind} IPSW 提取 rootfs DMG…")
+                log.die(f"{kind} IPSW does not contain {entry}")
+            log.log(f"Extracting rootfs DMG from {kind} IPSW…")
             partial = path + ".part"
             with archive.open(info) as source, open(partial, "wb") as dest:
                 shutil.copyfileobj(source, dest, 8 * 1024 * 1024)
@@ -236,11 +238,12 @@ class Context:
         try:
             version = plistlib.loads(ssh.sh(f'cat "{path}"'))
         except Exception as exc:
-            log.die(f"无法读取 SystemA 版本: {exc}")
+            log.die(f"Cannot read the SystemA version: {exc}")
         actual = version.get("ProductBuildVersion")
-        expected = self.t.get("source_profiles", {}).get("n56", {}).get("build")
+        native = self.t.get("native_profile", "n56")
+        expected = self.t.get("source_profiles", {}).get(native, {}).get("build")
         if expected and actual != expected:
-            log.die(f"SystemA build 为 {actual}，当前 profile 需要 {expected}")
+            log.die(f"SystemA build is {actual}; this profile requires {expected}")
         self._device_system_verified = True
 
     def mount_rootfs(self, kind):
@@ -255,14 +258,14 @@ class Context:
         line = next((line for line in mounts.splitlines() if f" on {mountpoint} " in line), "")
         if not line or "noowners" in line:
             subprocess.run(["hdiutil", "detach", mountpoint], capture_output=True)
-            log.die(f"{kind} rootfs 未以 owners 模式挂载")
+            log.die(f"{kind} rootfs is not mounted with ownership enabled")
         version_path = os.path.join(mountpoint, "System/Library/CoreServices/SystemVersion.plist")
         version = plistlib.load(open(version_path, "rb"))
         actual = version.get("ProductBuildVersion")
         expected = self.t.get("source_profiles", {}).get(kind, {}).get("build")
         if expected and actual != expected:
             subprocess.run(["hdiutil", "detach", mountpoint], capture_output=True)
-            log.die(f"{kind} rootfs build 为 {actual}，当前 profile 需要 {expected}")
+            log.die(f"{kind} rootfs build is {actual}; this profile requires {expected}")
         self._source_mounts[kind] = mountpoint
         return mountpoint
 
@@ -271,9 +274,9 @@ class Context:
             subprocess.run(["hdiutil", "detach", mountpoint], capture_output=True)
         self._source_mounts.clear()
 
-    # ---- SSH（ramdisk 会话注入后可用）----
+    # ---- SSH (available after the ramdisk session is injected)----
     @property
     def ssh(self):
         if self._ssh is None:
-            log.die("ramdisk SSH 会话未建立；先执行 ramdisk 阶段")
+            log.die("No ramdisk SSH session; run the ramdisk stage first")
         return self._ssh

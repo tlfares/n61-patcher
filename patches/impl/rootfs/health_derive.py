@@ -49,7 +49,7 @@ def _verified(path):
 
 
 def _trust_cache(ctx, name, extra):
-    """原版 J96 TC 加上清单里的 cdhash。"""
+    """Add the manifest cdhashes to the stock J96 trustcache."""
     output = Path(ctx.wk(name))
     stock = ctx.wk("trustcache.stock.raw")
     subprocess.run([ctx.tool("img4"), "-i", ctx.donor("trustcache"), "-o", stock],
@@ -80,13 +80,13 @@ def _extractor(ctx, project):
 
 
 def _extract_libraries(ctx, extractor):
-    """从 N66 dyld cache 抽取 Health 库，结果缓存在 ipsw/cache/derived/health。"""
+    """Extract Health libraries from the N66 dyld cache into ipsw/cache/derived/health."""
     root = Path(ctx.derived_root) / "health/extracted"
     libraries = json.loads((TOOLCHAIN / "library-plan.json").read_text())
     missing = [item for item in libraries if not (root / item.lstrip("/")).exists()]
     if not missing:
         return root
-    log.log(f"从 N66 dyld cache 抽取 {len(missing)} 个 Health 库…")
+    log.log(f"Extracting {len(missing)} Health libraries from the N66 dyld cache...")
     cache = Path(ctx.mount_rootfs("n66")) / "System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64"
     env = dict(os.environ, PYTHONPATH=f"{extractor}/src{os.pathsep}{extractor}/runtime")
 
@@ -124,7 +124,7 @@ def derive_health(ctx):
     dyld2 = full / "repair-v1/dyld2"
     (dyld2 / "images").mkdir(parents=True, exist_ok=True)
     (dyld2 / "bin").mkdir(exist_ok=True)
-    # 工具链生成 manifest 时要对这些路径算哈希，内容不影响 Health 库。
+    # Manifest generation hashes these paths; their contents do not affect Health libraries.
     for name in ("boot.sh", "bin/gaster", "bin/irecovery"):
         (dyld2 / name).touch()
     shutil.copy2(_trust_cache(ctx, "trustcache.repair-v1.raw", "repair_v1"), dyld2 / "trustcache.raw")
@@ -142,7 +142,7 @@ def derive_health(ctx):
 
     result = subprocess.run(["python3", "build_v7.py"], cwd=scripts)
     if result.returncode:
-        log.die("Health repair-v7 派生失败")
+        log.die("Health repair-v7 derivation failed")
     if not _verified(output):
-        log.die("Health repair-v7 派生结果与已验证摘要不一致")
+        log.die("Derived Health repair-v7 files differ from the verified digests")
     return str(output)

@@ -12,8 +12,11 @@ def run_impl(ctx, script, args=(), inp=None, output_dir=None):
     ctx.ensure_derived()
     env = os.environ.copy()
     env.update(N56_DONORS=ctx.source_root, N56_DERIVED=ctx.derived_root, N56_WORK=ctx.work)
-    env['PYTHONPATH'] = os.pathsep.join(str(root / p) for p in
-                                      ('', 'common', 'kc/sn2400', 'kc/vibration'))
+    env['N56_NATIVE_BOARD'] = ctx.t.get('device', {}).get('board', 'n56')
+    paths = [str(root / p) for p in ('', 'common', 'kc/sn2400', 'kc/vibration')]
+    if os.environ.get('PYTHONPATH'):
+        paths.append(os.environ['PYTHONPATH'])
+    env['PYTHONPATH'] = os.pathsep.join(paths)
     if inp is not None:
         env['N56_INPUT'] = str(inp)
     if output_dir is not None:

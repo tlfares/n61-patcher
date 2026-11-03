@@ -13,7 +13,7 @@ class Health(SourceOverlay):
     id = "rootfs.health"
     feature = "health"
     requires = ("rootfs.base_stream", "rootfs.fairplayd_h2", "rootfs.phone_ui_apps")
-    note = "部署 repair-v7 最终库并应用 dyld2 缓存补丁"
+    note = "Deploy final repair-v7 libraries and patch dyld2 cache handling"
     items = (
         SourceItem(source="ipsw:n66:System/Library/PrivateFrameworks/HealthPluginHost.framework/healthappd",
                    dest="System/Library/PrivateFrameworks/HealthPluginHost.framework/healthappd",
@@ -33,13 +33,13 @@ class Health(SourceOverlay):
     def apply(self, ctx, art=None):
         n66 = ctx.mount_rootfs("n66")
         resources = bundle_resource_paths(n66)
-        log.log(f"  流式部署 {len(resources)} 份 Health bundle 资源…")
+        log.log(f"  Streaming {len(resources)} Health bundle resources...")
         ctx.ssh.mount(ctx.t["mounts"]["system_b"], "/mnt6")
         ctx.ssh.deploy_relative_paths(n66, resources, "/mnt6")
         libraries = derive_health(ctx)
         count = sum(len(files) for _, _, files in os.walk(libraries))
         if count != 50:
-            log.die(f"Health donor 应有 50 个库，当前 {count}")
-        log.log("  流式部署 50 个 Health/Phone 最终库…")
+            log.die(f"Expected 50 Health donor libraries, found {count}")
+        log.log("  Streaming 50 final Health/Phone libraries...")
         ctx.ssh.deploy_path(libraries, "/mnt6", uid=0, gid=0)
         super().apply(ctx, art)

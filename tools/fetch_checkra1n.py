@@ -64,7 +64,7 @@ def overlay_image(blob):
             if kind == UDIF_END or kind in UDIF_ZERO:
                 continue
             if kind != UDIF_ZLIB:
-                raise SystemExit(f"不支持的 UDIF 块类型: {kind:#x}")
+                raise SystemExit(f"Unsupported UDIF block type: {kind:#x}")
             at = (start + sector) * 512
             image[at:at + count * 512] = zlib.decompress(blob[base + offset:base + offset + size])
     return image
@@ -73,7 +73,7 @@ def overlay_image(blob):
 def fetch(dest=DEST):
     if all((dest / name).is_dir() for name in ("overlay-files", "ramdisk-files", "loader.app")):
         return
-    print("下载并提取 checkra1n 0.12.4…")
+    print("Downloading and extracting checkra1n 0.12.4…")
     partial = dest.with_name(dest.name + ".partial")
     shutil.rmtree(partial, ignore_errors=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -81,7 +81,7 @@ def fetch(dest=DEST):
         with urllib.request.urlopen(URL) as source, open(dmg, "wb") as output:
             shutil.copyfileobj(source, output)
         if hashlib.sha256(dmg.read_bytes()).hexdigest() != SHA256:
-            raise SystemExit("checkra1n DMG 的 SHA-256 不匹配")
+            raise SystemExit("checkra1n DMG SHA-256 mismatch")
         with mounted(dmg) as volume:
             blob = (volume / BINARY).read_bytes()
 

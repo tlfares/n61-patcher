@@ -12,11 +12,11 @@ class KcLegacySep(Patch):
         'kc.pmu_d2186',
         'kc.sn2400',
         'kc.chestnut_kext',
-        'kc.mt_n56',
+        'kc.mt_native',
         'kc.wifi',
         'kc.vibration',
     )
-    note = "旧 SEP 协议兼容"
+    note = "Legacy SEP protocol compatibility"
 
     def apply(self, ctx, art):
         return transform(ctx, "kc/legacy_sep.py", art, "legacy-sep")

@@ -1,4 +1,4 @@
-# 运行产物与本地固件
+# Generated outputs and local firmware
 /donors/
 /ipsw/
 /state/
@@ -11,7 +11,7 @@
 IM4M*
 *keybag*
 *.p12
-# python / 杂项
+# Python / miscellaneous
 __pycache__/
 *.pyc
 .DS_Store
@@ -19,3 +19,7 @@ __pycache__/
 /tools/bin/
 /tools/checkra1n-kpf/checkra1n/kpf-test/kpf-test.macos
 .venv/
+
+# Device/host diagnostics can contain account and hardware identifiers.
+/logs/
+*.log

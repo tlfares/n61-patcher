@@ -16,7 +16,7 @@ class BluetoothUserland(SourceOverlay):
     feature = "bluetooth"
     scope = "version"
     requires = ("rootfs.base_stream", "rootfs.b1_firmware", "rootfs.fairplayd_h2")
-    note = "从 SystemA 生成 bluetoothd/BlueTool，并从 N66 补 NanoRegistry"
+    note = "Derive bluetoothd/BlueTool from SystemA and copy N66 NanoRegistry"
     items = (
         SourceItem(source="patch:bluetoothd", dest="usr/sbin/bluetoothd", op="copy",
                    depends_on_signing=True, mode=0o755, uid=0, gid=0),

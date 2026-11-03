@@ -1,4 +1,4 @@
-"""为新建的加密 DataB 创建 systembag，保留设备全局 BAG1。"""
+"""Create a systembag for encrypted DataB while preserving device-wide BAG1."""
 from pathlib import Path
 import subprocess
 
@@ -8,14 +8,14 @@ from core.tools import run
 
 FRAMEWORK = "/System/Library/PrivateFrameworks/MobileKeyBag.framework/MobileKeyBag"
 REMOTE = "/mnt6/.n56-bootstrap"
-# KBSaveSystemBagHandle 第 5 参数：mov w4, #0 → #1，沿用已有 BAG1 包裹材料。
+# Set KBSaveSystemBagHandle argument 5 to 1 to reuse existing BAG1 wrapping material.
 PRESERVE_BAG1 = (0x8d20, bytes.fromhex("04008052"), bytes.fromhex("24008052"))
 
 
 def patch_framework(data):
     offset, before, after = PRESERVE_BAG1
     if data[offset:offset + 4] != before:
-        raise ValueError("MobileKeyBag 与 16H88 ramdisk 版本不符，拒绝打补丁")
+        raise ValueError("MobileKeyBag does not match the 16H88 ramdisk profile; refusing to patch")
     return data[:offset] + after + data[offset + 4:]
 
 
@@ -40,18 +40,18 @@ def build_framework(ctx):
 
 
 def ensure_systembag(ctx):
-    """需已只读挂载 /mnt1、读写挂载 /mnt6；本函数加载 SEP 并挂载 /mnt7。"""
+    """Requires read-only /mnt1 and writable /mnt6; loads SEP and mounts /mnt7."""
     ssh = ctx.ssh
     ssh.ensure_sep()
     device = f'/dev/disk0s1s{ctx.t["mounts"]["data_b"]}'
     mode = ssh.sh(f'/sbin/mount | grep -q "{device} on /mnt7" && echo mounted || '
                   f'{{ /sbin/mount_apfs -o protect {device} /mnt7 && echo protect || '
                   f'{{ /sbin/mount_apfs {device} /mnt7 && echo plain; }}; }}').decode().strip()
-    log.log(f"DataB 挂载方式: {mode}")
+    log.log(f"DataB mount mode: {mode}")
     if ssh.sh("test -s /mnt7/keybags/systembag.kb && echo yes || true").strip() == b"yes":
-        log.log("systembag 已存在，跳过创建。")
+        log.log("Systembag already exists; skipping creation.")
         return
-    log.log("创建 systembag（保留 BAG1）…")
+    log.log("Creating systembag while preserving BAG1...")
     helper = build_helper(ctx)
     framework = build_framework(ctx)
     ssh.deploy_path(helper, f"{REMOTE}/create_systembag")

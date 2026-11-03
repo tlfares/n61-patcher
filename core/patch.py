@@ -1,22 +1,12 @@
-"""Patch 基类 + 注册表（A + feature 标签的核心）。
+"""Patch registry, feature selection, and dependency ordering.
 
-一个 patch = 一层里的一件事，一个文件。requires 补齐依赖，after 安排已选补丁的顺序。
+A patch performs one operation in the kc, dt, or rootfs layer. Each binary layer
+has one base plus ordered transforms. Rootfs patches stream the base image,
+deploy file overlays, or finalize volumes. requires adds dependencies; after
+orders patches that are already selected. scope is device or version.
 
-layer  : kc | dt | rootfs          （iBSS/iBEC/TrustCache 是目标级固定组件，由 flow 直接构建）
-role   : base | transform | overlay | stream | finalize
-  - base      : 提供某层的起始二进制（kc 的起始内核、dt 的起始设备树）。每层选且仅选一个。
-  - transform : 在起始二进制上原地叠加的变换（kc 的 pmu/mt/chestnut…、dt 的功能补充）。顺序由 requires/after 决定。
-  - stream    : rootfs 基底流式写入（唯一）。
-  - overlay   : rootfs 的文件集 overlay（health/ui/蓝牙…），各自独立部署。
-  - finalize  : rootfs 收尾（var→DataB、fsck 替换、SEP 固件、keybags、改 role）。
-feature: core/touch/audio/wifi/baseband/sep/ui/bluetooth/health… 选挂的单位。
-scope  : device（跨 iOS 版本复用）| version（随 iOS 版本变）。
-
-apply() 签名随 role：
-  base      : apply(ctx) -> 产出二进制路径
-  transform : apply(ctx, art) -> 新二进制路径（art 为当前层产物）
-  stream/overlay/finalize : apply(ctx) -> None（经 ctx.ssh 直接作用于设备）
-"""
+base.apply(ctx) returns a binary path; transform.apply(ctx, art) returns its
+replacement. stream/overlay/finalize.apply(ctx) operate through ctx.ssh."""
 import importlib.util
 import os
 
@@ -37,7 +27,7 @@ class Patch:
     after = ()       # Order only: absent patches are not selected.
     donors = ()
     note = ""
-    manual = False   # True: 需人工/多步部署，flow 默认跳过并打印权威路径，除非显式允许
+    manual = False   # True: requires manual steps; skipped unless explicitly enabled
 
     def __init_subclass__(cls, **kw):
         super().__init_subclass__(**kw)
@@ -45,14 +35,14 @@ class Patch:
             _REGISTRY.append(cls)
 
     def apply(self, ctx, art=None):
-        raise NotImplementedError(f"{self.id} 未实现 apply")
+        raise NotImplementedError(f"{self.id} does not implement apply")
 
     def __repr__(self):
         return f"<{self.id} {self.layer}/{self.role} feat={self.feature}>"
 
 
 def discover(patches_dir=None):
-    """导入 patches/ 下所有模块，填充注册表。幂等。"""
+    """Import modules under patches/ and populate the registry. Idempotent."""
     _REGISTRY.clear()
     patches_dir = patches_dir or os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "patches")
@@ -75,7 +65,7 @@ def _instances():
 
 
 def _topo(patches):
-    """按 requires 和可选 after 做稳定拓扑排序（同层内）。"""
+    """Stable topological ordering within a layer using requires and optional after."""
     by_id = {p.id: p for p in patches}
     out, seen, temp = [], set(), set()
 
@@ -83,7 +73,7 @@ def _topo(patches):
         if p.id in seen:
             return
         if p.id in temp:
-            log.die(f"patch 依赖成环: {p.id}")
+            log.die(f"Patch dependency cycle: {p.id}")
         temp.add(p.id)
         for dep in (*p.requires, *p.after):
             if dep in by_id:
@@ -98,10 +88,10 @@ def _topo(patches):
 
 
 def select(target):
-    """按目标清单挑选 patch，返回 {layer: [有序 patch 实例]}。
+    """Select patches from a target and return {layer: [ordered patch instances]}.
 
-    选中规则：patch.feature ∈ target['features'] 或 patch.id ∈ target.get('patches')，
-    kc_patches 可覆盖 KC transform 选择；exclude 排除补丁；bases 指定各层基底。
+    Select when patch.feature is in target features or patch.id is explicitly listed.
+    kc_patches overrides KC transforms; exclude removes patches; bases selects each layer baseline.
     """
     discover()
     inst = _instances()
@@ -115,15 +105,15 @@ def select(target):
 
     unknown = (want_ids | exclude) - inst.keys()
     if unknown:
-        log.die(f"未知 patch: {', '.join(sorted(unknown))}")
+        log.die(f"Unknown patch: {', '.join(sorted(unknown))}")
     if kc_picks is not None:
         invalid = [pid for pid in kc_picks if inst[pid].layer != "kc" or inst[pid].role == "base"]
         if invalid:
-            log.die(f"--patches 请选择 KC transform: {', '.join(invalid)}")
+            log.die(f"--patches requires KC transform IDs: {', '.join(invalid)}")
     known_features = {p.feature for p in inst.values()}
     unknown_features = features - known_features
     if unknown_features:
-        log.die(f"未知 feature: {', '.join(sorted(unknown_features))}")
+        log.die(f"Unknown feature: {', '.join(sorted(unknown_features))}")
 
     chosen = []
     for p in inst.values():
@@ -149,23 +139,23 @@ def select(target):
             if dep in selected:
                 continue
             if dep in exclude or dep not in inst:
-                log.die(f"{patch.id} 需要 {dep}，请调整 patches/exclude")
+                log.die(f"{patch.id} requires {dep}; adjust patches/exclude")
             required = inst[dep]
             if required.role == "base" and bases.get(required.layer) != dep:
-                log.die(f"{patch.id} 需要基底 {dep}")
+                log.die(f"{patch.id} requires base {dep}")
             selected.add(dep)
             chosen.append(required)
             pending.append(required)
 
-    # 校验每层 base 唯一
+    # Require exactly one base per binary layer
     result = {}
     for layer in LAYER_ORDER:
         group = [p for p in chosen if p.layer == layer]
         bases_in = [p for p in group if p.role == "base"]
         if layer in ("dt", "kc") and len(bases_in) != 1:
             names = [b.id for b in bases_in]
-            log.die(f"{layer} 层需要且仅需要一个 base（当前: {names or '无'}；"
-                    f"在清单 bases['{layer}'] 指定）")
+            log.die(f"{layer} layer requires exactly one base (current: {names or 'none'}; "
+                    f"set it in profile bases['{layer}'])")
         group.sort(key=lambda p: (ROLE_ORDER.get(p.role, 9),))
         group = _topo(group)
         group.sort(key=lambda p: ROLE_ORDER.get(p.role, 9))

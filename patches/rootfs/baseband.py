@@ -19,11 +19,31 @@ EDITS = (
 )
 
 
+def edits_for_board(board):
+    """Select Mav10 for native N56/N61 without changing device identity.
+
+    libTelephonyUtilDynamic's TelephonyRadiosGetProduct returns 0x11 for
+    N56AP and 0x1a for N61AP. The table is indexed by product - 0x11;
+    the upstream table leaves N61's slot 9 at the unknown-model branch.
+    Both boards use the existing Mav10 branch (halfword 0x0201).
+    """
+    if board != "n61":
+        return EDITS
+    table = bytearray.fromhex(EDITS[0][2])
+    table[18:20] = bytes.fromhex("0102")
+    result = list(EDITS)
+    result[0] = (EDITS[0][0], EDITS[0][1], table.hex())
+    # SHA-256 slot for the modified 4 KiB table page in J96 17H35.
+    result[-1] = (EDITS[-1][0], EDITS[-1][1],
+                  "443d51841ba41a50ac16dfecd0c75ce9219ec32c9df87d3500a24d97e33fd3ff")
+    return tuple(result)
+
+
 class BasebandCompatibility(SourceOverlay):
     id = "rootfs.baseband_compatibility"
     feature = "baseband"
     scope = "version"
-    note = "CommCenter N56 产品表、Mav10 固件和 iPhone Carrier Bundles"
+    note = "Native CommCenter product mapping, Mav10 firmware and iPhone carrier bundles"
     items = tuple(
         SourceItem(source="target:" + CACHE, dest=CACHE, op="bytes-patch",
                    depends_on_signing=True, offset=offset, before=before, after=after)
@@ -39,3 +59,11 @@ class BasebandCompatibility(SourceOverlay):
                    dest="System/Library/Carrier Bundles/iPhone",
                    op="copy", depends_on_signing=True),
     )
+
+    def apply(self, ctx, art=None):
+        self.items = tuple(
+            SourceItem(source="target:" + CACHE, dest=CACHE, op="bytes-patch",
+                       depends_on_signing=True, offset=offset, before=before, after=after)
+            for offset, before, after in edits_for_board(ctx.t["device"]["board"])
+        ) + type(self).items[len(EDITS):]
+        super().apply(ctx, art)

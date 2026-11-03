@@ -6,14 +6,16 @@ import struct
 import sys
 
 HERE = Path(__file__).resolve().parent
-from paths import ROOT, DERIVED, INPUT, OUTPUT
+from paths import ROOT, DERIVED, INPUT, OUTPUT, N56
 from macho import Kernel
 from port import instructions
 
-DONOR = DERIVED / 'extracted/n56ap_ios12/kernelcache.release.iphone7.decompressed'
+DONOR = N56
 BASELINE = INPUT
 CODE_START = 0xfffffff0086ee8f0
 CODE_END = 0xfffffff0086efc68
+# Audited zero alignment after the metaclass destructor and the final stop RET.
+CODE_PADDING = (CODE_START + 4, CODE_END - 4)
 PWM_META13 = 0xfffffff0077f0ae8
 PWM_CTOR13 = 0xfffffff005fd9e74
 PWM_DTOR13 = 0xfffffff005fd9e94
@@ -108,7 +110,8 @@ def analyze(input_path=BASELINE, output_dir=None):
     drv12 = vtable(donor, 0xfffffff007628560, True)
     overrides = [dict(old_slot=i, new_slot=i + (i >= 12), method=hex(method))
                  for i, method in enumerate(drv12) if method != pwm12[i]]
-    code = instructions(donor.read(CODE_START, CODE_END - CODE_START), CODE_START)
+    code = instructions(donor.read(CODE_START, CODE_END - CODE_START), CODE_START,
+                        padding_words=CODE_PADDING)
     patches = virtual_loads(code)
     report = dict(insertion_slot=12, insertion_method='OSMetaClassBase::Dispatch(IORPC)',
                   ios13_service_override='IOService::Dispatch(IORPC)',

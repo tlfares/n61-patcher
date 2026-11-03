@@ -10,7 +10,7 @@ class KcChestnutKext(Patch):
     scope = "device"
     requires = ('kc.j96_clean',)
     after = ('kc.pmu_d2186', 'kc.sn2400')
-    note = "注入 AppleChestnutDisplayPMU（触摸供电）"
+    note = "Inject AppleChestnutDisplayPMU (touch power supply)"
 
     def apply(self, ctx, art):
         return transform(ctx, "kc/chestnut/transplant.py", art, "chestnut", True)

@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
-"""rootfs 收尾：var→DataB、xarts/preboot、iOS14 fsck、SEP 固件、keybags。
+"""Finalize SystemB: DataB relocation, fsck, SEP firmware and keybags.
 
-移植自 install_ios13.sh cmd_finish。各步踩坑：
-  - private/var → DataB(s5)：iOS13 的 /private/var 在独立 Data 卷。
-  - 换 iOS14 的 sbin/fsck + apfs.fs（dualra1n 提供）：iOS13 自带 fsck 不适应双系统布局，
-    否则 "Boot task failed: fsck"。原文件改名 *Backup。
-  - SEP 固件：从 iOS12 s1 拷个性化 sep-firmware.img4（与 IM4M 自签逐字节一致），
-    iOS13 用户态自行加载；缺了 data-protection 启动失败。
-  - keybags 来自越狱 iOS12（ramdisk 挂不了加密 s2）。
-  - 远端 tar 后不接 | head；设备端 tar --numeric-owner。
-"""
+The iOS 13 private/var tree belongs on a separate DataB volume. Use the
+legacy personalized SEP firmware from native SystemA and iOS 14 fsck/APFS
+helpers for the dual-system volume layout. The unencrypted fallback takes
+keybags from a previously jailbroken iOS 12 system; the ramdisk cannot mount
+its encrypted Data volume. Always stream tar with numeric owners and never
+pipe the remote extraction into head."""
 import os
 import subprocess
 
@@ -27,7 +24,7 @@ class RootfsFinish(Patch):
     scope = "version"
     requires = ("rootfs.base_stream",)
     donors = ("apfs14",)
-    note = "var→DataB / fsck / SEP固件 / keybags 等收尾"
+    note = "Finalize var -> DataB / fsck / SEP firmware / keybags"
 
     def apply(self, ctx, art=None):
         ssh = ctx.ssh
@@ -45,15 +42,15 @@ class RootfsFinish(Patch):
         log.log("private/var → DataB…")
         ssh.sh("/bin/cp -a /mnt6/private/var/. /mnt7/")
 
-        log.log("xarts / preboot 目录…")
+        log.log("Creating xarts / preboot directories...")
         ssh.sh("mkdir -p /mnt6/private/xarts /mnt6/private/preboot && "
                "chmod 755 /mnt6/private/xarts /mnt6/private/preboot")
 
-        log.log("换 iOS14 fsck + apfs.fs（原文件改名 *Backup）…")
+        log.log("Installing iOS 14 fsck + apfs.fs (originals renamed *Backup)...")
         ssh.sh("cd /mnt6 && { [ -e sbin/fsckBackup ] || mv sbin/fsck sbin/fsckBackup; } && "
                "{ [ -e System/Library/Filesystems/apfs.fsBackup ] || "
                "mv System/Library/Filesystems/apfs.fs System/Library/Filesystems/apfs.fsBackup; }")
-        # 从 master 的 apfsios14 打包 fsck + apfs.fs，流式送设备（等长无关，用管道避免内存）
+        # Stream fsck + apfs.fs from apfsios14 directly to the device.
         src = subprocess.Popen(
             ["/usr/bin/tar", "--uid", "0", "--gid", "0", "--no-xattrs", "-cf", "-",
              "-C", apfs14, "./sbin/fsck", "./System/Library/Filesystems/apfs.fs"],
@@ -67,14 +64,14 @@ class RootfsFinish(Patch):
         _, err = dst.communicate()
         src.wait()
         if dst.returncode != 0:
-            log.die("fsck/apfs.fs 替换失败\n" + (err or b"").decode(errors="replace"))
+            log.die("Failed to replace fsck/apfs.fs\n" + (err or b"").decode(errors="replace"))
 
-        log.log("SEP 固件（来自 iOS12 s1）…")
+        log.log("Copying SEP firmware from iOS 12 SystemA...")
         ssh.sh("/bin/cp -a /mnt1/usr/standalone/firmware/sep-firmware.img4 "
                "/mnt6/usr/standalone/firmware/")
 
         if encrypted:
-            log.log("保留本次为加密 DataB 创建的 systembag…")
+            log.log("Keeping the systembag created for encrypted DataB...")
             ssh.sh("test -s /mnt7/keybags/systembag.kb")
         else:
             log.log("keybags → DataB…")
@@ -85,4 +82,4 @@ class RootfsFinish(Patch):
                "/mnt7/keybags/systembag.kb")
         ssh.sync()
         ssh.umount("/mnt1", "/mnt7", "/mnt6")
-        log.log("finish 完成，卷已卸载。")
+        log.log("Finalization complete; volumes unmounted.")

@@ -9,7 +9,7 @@ class Checkra1nBootstrap(Patch):
     scope = "device"
     feature = "checkra1n"
     requires = ("rootfs.base_stream",)
-    note = "checkra1n Loader 服务、用户态工具与 USB SSH"
+    note = "checkra1n Loader service, userland tools and USB SSH"
 
     def apply(self, ctx, art=None):
         ctx.ssh.mount(ctx.t["mounts"]["system_b"], "/mnt6")

@@ -34,7 +34,7 @@ def build(input_path, output):
         data[offset:offset + len(after)] = after
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)
-    print('旧 SEP 兼容候选:', output)
+    print('Legacy SEP compatibility candidate:', output)
     return output
 
 

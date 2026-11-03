@@ -47,14 +47,14 @@ import subprocess
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from paths import DERIVED, OUTPUT
+from paths import DERIVED, N56_DT, NATIVE_BOARD, OUTPUT
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 EXTRACTED = str(DERIVED / "extracted")
-N56_JSONC = os.path.join(EXTRACTED, "n56ap_ios12", "DeviceTree.n56ap.jsonc")
+N56_JSONC = str(N56_DT)
 N66_JSONC = os.path.join(EXTRACTED, "n66ap_ios13", "DeviceTree.n66ap.jsonc")
-OUT_JSONC = str(OUTPUT / "DeviceTree.n56_native.jsonc")
-OUT_BIN = str(OUTPUT / "DeviceTree.n56_native.bin")
+OUT_JSONC = str(OUTPUT / f"DeviceTree.{NATIVE_BOARD}_native.jsonc")
+OUT_BIN = str(OUTPUT / f"DeviceTree.{NATIVE_BOARD}_native.bin")
 
 # ---- role configuration (must match on-disk APFS volume roles) -------------
 # Stock iOS 13 values; s4/s5 superblocks are patched to match (see docstring).
@@ -253,17 +253,18 @@ def patch_native():
         add_prop(sep_nub, "rom-panic-bytes", 0, 4, 1)
         print("  ✓ Added rom-panic-bytes to /arm-io/sep/iop-sep-nub")
 
-    # 4. Patch touch compatibility alias (multi-touch,n56 -> add multi-touch,j96 fallback)
+    # 4. Keep the native touch match and add the J96 driver's fallback alias.
     touch_node = find_node_by_path(root, ["arm-io", "spi2", "multi-touch"])
     if touch_node:
+        touch_match = f"multi-touch,{NATIVE_BOARD}\x00multi-touch,j96\x00"
         add_prop(
             touch_node,
             "compatible",
-            "multi-touch,n56\x00multi-touch,j96\x00",
-            32,
+            touch_match,
+            len(touch_match),
             4,
         )
-        print("  ✓ Added multi-touch,j96 alias to /arm-io/spi2/multi-touch")
+        print(f"  ✓ Kept multi-touch,{NATIVE_BOARD} and added multi-touch,j96 alias")
 
         # Drop function-power_ana (analog supply for the touch controller).
         # Its provider is display-pmu,chestnut (phandle 0x4b), a TI display PMU
@@ -277,11 +278,11 @@ def patch_native():
         # dependency lets start proceed past the power stage; the other touch
         # functions keep their present providers (power_ldo→pmu 0x49,
         # clock_enable→pmgr 0x13, reset/enable_cs→gpio 0x18).
-        # 现已把 AppleChestnutDisplayPMU kext 从 n66 移植进 j96 内核
-        # (chestnut_port/inject_chestnut.py), 它会为 display-pmu,chestnut 提供
-        # AppleDisplayPMUFunctionLDOEnable = power_ana。所以默认【保留】
-        # function-power_ana, 让触摸驱动真正拿到模拟供电。
-        # 仅当 DROP_POWER_ANA=1 时才删除 (旧实验: 内核未注入 chestnut 的回退)。
+        # AppleChestnutDisplayPMU is transplanted from N66 into the J96 kernel
+        # (chestnut_port/inject_chestnut.py), providing display-pmu,chestnut with
+        # AppleDisplayPMUFunctionLDOEnable = power_ana. Preserve
+        # function-power_ana by default so the touch driver receives analog power.
+        # Remove it only with DROP_POWER_ANA=1 (fallback for old experiments without chestnut).
         if os.environ.get("DROP_POWER_ANA") == "1":
             if remove_prop(touch_node, "function-power_ana"):
                 print("  ✓ [DROP_POWER_ANA=1] Removed function-power_ana "
@@ -326,7 +327,7 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=Path, default=OUTPUT)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    OUT_JSONC = str(args.out / "DeviceTree.n56_native.jsonc")
-    OUT_BIN = str(args.out / "DeviceTree.n56_native.bin")
+    OUT_JSONC = str(args.out / f"DeviceTree.{NATIVE_BOARD}_native.jsonc")
+    OUT_BIN = str(args.out / f"DeviceTree.{NATIVE_BOARD}_native.bin")
     repack_tool = args.repack
     patch_native()

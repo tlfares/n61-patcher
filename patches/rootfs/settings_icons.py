@@ -1,4 +1,5 @@
 from core.overlay import SourceItem, SourceOverlay
+from patches.impl.rootfs.phone_ui import ui_resource_items
 
 
 PATHS = (
@@ -15,6 +16,10 @@ class SettingsIcons(SourceOverlay):
     id = "rootfs.settings_icons"
     feature = "ui"
     requires = ("rootfs.base_stream", "rootfs.ui_resources")
-    note = "从 N66 rootfs 补设置 3x 图标"
+    note = "Copy Settings icons from the selected iPhone resource profile"
     items = tuple(SourceItem(source="ipsw:n66:" + path, dest=path, op="copy",
                              depends_on_signing=False) for path in PATHS)
+
+    def apply(self, ctx, art=None):
+        self.items = ui_resource_items(ctx, PATHS)
+        super().apply(ctx, art)

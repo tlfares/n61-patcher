@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 import sys
 
-from paths import ROOT, DERIVED, INPUT, OUTPUT
+from paths import ROOT, DERIVED, INPUT, OUTPUT, N56
 HERE = Path(__file__).resolve().parent
 from macho import Kernel
 from analyze13 import build_stub_map, cstr, resolve_regs
@@ -18,7 +18,7 @@ SHARED = ['com.apple.driver.AppleEmbeddedAudio',
           'com.apple.driver.AppleEmbeddedMikeyBus',
           'com.apple.iokit.IOMikeyBusFamily']
 PATHS = {
-    '12': DERIVED / 'extracted/n56ap_ios12/kernelcache.release.iphone7.decompressed',
+    '12': N56,
     '13': INPUT,
     'n66_13': DERIVED / 'extracted/n66ap_ios13/kernelcache.release.n66.decompressed',
 }

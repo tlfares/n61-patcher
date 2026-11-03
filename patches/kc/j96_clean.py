@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""解包干净 J96 KC，应用通用启动补丁并还原 APFS 字符串误改。"""
+"""Unpack the J96 kernel, apply boot patches, and restore an APFS diagnostic byte."""
 from core.patch import Patch
 from core.tools import Tools
 
@@ -11,7 +11,7 @@ class KcJ96Clean(Patch):
     feature = "core"
     scope = "version"
     donors = ("j96_kernel",)
-    note = "j96 内核 + KPloosh + K64P -b13 -n（从零重建基底）"
+    note = "J96 kernel + KPloosh + K64P -b13 -n (rebuild the baseline)"
 
     def apply(self, ctx, art=None):
         t = Tools(ctx)
@@ -20,6 +20,8 @@ class KcJ96Clean(Patch):
         out = ctx.wk("kc.j96.clean.raw")
         t.img4_extract(ctx.donor("j96_kernel"), raw)
         t.kplooshfinder(raw, patched)
+        # This patcher flag disables the biometric sensor. Keep Touch ID off
+        # until the iOS 12 SEP transport is adapted to the iOS 13 driver.
         t.kernel64patcher(patched, out, ["-b13", "-n"])
         # K64P also changes a byte inside an APFS diagnostic string. Restore it
         # exactly as the original boot chain's kerneldiff filter did.

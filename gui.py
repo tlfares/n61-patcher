@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""n56-patcher 本地网页界面（标准库 http.server，零依赖）。
+"""Local browser interface using the standard-library HTTP server.
 
-本机 Python 可能不带 tkinter，故用浏览器界面：选目标、勾 feature、切选项、点阶段，
-日志实时回显。每个阶段以 subprocess 跑 n56patcher.py，输出流式送到页面。
-
-运行：python3 gui.py            # 默认 http://127.0.0.1:8756
-      sudo python3 gui.py       # 需要跑 rootfs/install/all（写盘）时用 sudo 起
-      python3 gui.py --port 9000
-仅监听本地回环，不对外。
-"""
+Select a target, features, options and a stage; subprocess output is streamed to
+the page. Run python3 gui.py, or sudo python3 gui.py for stages that write storage.
+The default listener is http://127.0.0.1:8756; --port changes the port.
+The server binds to loopback by default."""
 import argparse
 import json
 import os
@@ -34,7 +30,7 @@ STAGES = ["ramdisk", "extract-im4m", "volumes", "rootfs",
 def list_targets():
     out = [fn[:-3].replace("_", "-") for fn in sorted(os.listdir(TARGETS_DIR))
            if fn.endswith(".py") and not fn.startswith("_")]
-    return out or ["n56-ios13"]
+    return out or ["n61-ios13"]
 
 
 def target_features(name):
@@ -48,11 +44,11 @@ def target_features(name):
 
 
 class Runner:
-    """串行跑阶段，日志进内存缓冲，页面按 offset 拉取。"""
+    """Run stages serially and let the page poll an in-memory log by offset."""
     def __init__(self):
         self.lines = []
         self.proc = None
-        self.started = 0.0          # 本次阶段开始的 epoch 秒；供前端算用时（刷新也准）
+        self.started = 0.0          # Stage start time in epoch seconds, retained across page refreshes.
         self.lock = threading.Lock()
 
     def running(self):
@@ -68,7 +64,7 @@ class Runner:
 
     def start(self, args):
         if self.running():
-            self.put("[!] 有阶段正在运行。\n")
+            self.put("[!] A stage is already running.\n")
             return False
         self.started = time.time()
         self.put("\n$ " + " ".join(args) + "\n")
@@ -80,27 +76,27 @@ class Runner:
             self.proc = subprocess.Popen(args, cwd=REPO, stdout=subprocess.PIPE,
                                          stderr=subprocess.STDOUT, bufsize=1, text=True)
         except Exception as e:
-            self.put(f"[ERROR] 启动失败：{e}\n")
+            self.put(f"[ERROR] Failed to start: {e}\n")
             return
         for line in self.proc.stdout:
             self.put(line)
         self.proc.wait()
-        self.put(f"[*] 阶段结束，退出码 {self.proc.returncode}\n")
+        self.put(f"[*] Stage finished, exit code {self.proc.returncode}\n")
 
     def stop(self):
         if self.running():
             self.proc.terminate()
-            self.put("[!] 已请求停止。\n")
+            self.put("[!] Stop requested.\n")
 
 
 RUNNER = Runner()
 
-# raw 字符串：内嵌 JS 的 \n 与正则不能被 Python 提前转义。
-PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+# Use a raw string so Python preserves embedded JavaScript escapes and regexes.
+PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:,">
-<title>n56-patcher</title><style>
+<title>n61-patcher</title><style>
 :root{color-scheme:dark;
  --ink:#0f0e0b;--plate:#191714;--plate2:#221f1a;--plate3:#2c2821;--line:#332e26;--line2:#4d473b;
  --fg:#efe9db;--mut:#a39a88;--amber:#ffb000;--amber2:#ffc94d;--on-amber:#1c1400;
@@ -126,7 +122,7 @@ code{font-family:var(--mono);font-size:.93em}
 .ic svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .lab{font:600 11px/1.3 var(--mono);letter-spacing:.14em;color:var(--mut);text-transform:uppercase}
 
-/* 控件 */
+/* Controls */
 .sel{position:relative;display:block;min-width:0}
 .sel::after{content:"";position:absolute;right:10px;top:50%;width:6px;height:6px;margin-top:-5px;
  border:solid var(--mut);border-width:0 1.5px 1.5px 0;transform:rotate(45deg);pointer-events:none}
@@ -158,7 +154,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .tag.opt{border:1px dashed var(--line2);color:var(--mut);font-weight:500}
 .tag.dry{background:var(--amber-a);color:var(--amber);font-family:var(--mono)}
 
-/* 顶栏 */
+/* Header */
 .top{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 16px;
  background:var(--plate);border-bottom:1px solid var(--line)}
 .plate{display:flex;align-items:center;gap:12px;margin-right:auto;min-width:0}
@@ -187,7 +183,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .btn.stop:not(:disabled){background:var(--red-solid);border-color:var(--red-solid);color:#fff;font-weight:650}
 .btn.stop:hover:not(:disabled){background:var(--red-hover);border-color:var(--red-hover)}
 
-/* 启动链 */
+/* Boot chain */
 .chainbar{padding:10px 16px 0;background:var(--plate);border-bottom:1px solid var(--line)}
 .ph{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;min-height:26px}
 .ph h2{font:650 12.5px/1.3 var(--sans)}
@@ -225,7 +221,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .n-id{font:11px/1.45 var(--mono);color:var(--mut);overflow-wrap:anywhere}
 .node .tag{margin-top:6px}
 
-/* 工作区 */
+/* Workspace */
 .bench{display:grid;grid-template-columns:minmax(0,1fr)}
 .step{padding:14px 16px 16px;background:var(--plate);border-bottom:1px solid var(--line);scroll-margin-top:110px}
 .sthead{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;align-items:start}
@@ -257,7 +253,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .combo-id{font:12px var(--mono);color:var(--red)}
 .combo .pad{width:14px;height:14px;margin:0}
 
-/* 控制台 */
+/* Console */
 .console{display:flex;flex-direction:column;min-width:0;padding:10px 16px 12px;scroll-margin-top:110px}
 .logwrap{position:relative;flex:1;height:60vh;min-height:300px;margin-top:6px}
 #log{height:100%;overflow:auto;padding:10px 12px;background:#080705;border:1px solid var(--line);border-radius:2px;
@@ -276,7 +272,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .q[aria-busy=true],.q[aria-busy=true]:disabled{opacity:1;color:var(--amber);border-color:rgba(255,176,0,.6)}
 .q[data-r=ok] .ic{color:var(--ok)}.q[data-r=fail] .ic{color:var(--red)}
 
-/* 底部状态条 */
+/* Footer status */
 .bar{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:8px 16px;
  background:var(--plate);border-top:1px solid var(--line)}
 .fsum{display:flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0;height:28px;padding:0 8px 0 0;background:none;border:0;text-align:left}
@@ -291,7 +287,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .drysw input,.optrow input{position:absolute;opacity:0;width:1px;height:1px}
 .drysw:has(input:checked){color:var(--amber)}
 
-/* 选项抽屉 */
+/* Options drawer */
 .drawer{width:min(440px,100vw);max-width:none;height:100dvh;max-height:none;margin:0 0 0 auto;padding:0;color:var(--fg);
  background:var(--plate);border:0;border-left:1px solid var(--line2)}
 .drawer[open]{animation:slide .16s ease-out}
@@ -322,7 +318,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .chip.dev span::after{content:attr(data-dev);font:10.5px var(--sans);color:var(--amber)}
 .hint{margin-top:8px;color:var(--mut);font-size:12px}
 
-/* 确认 */
+/* Confirmation */
 .confirm{width:min(480px,calc(100vw - 32px));padding:0;color:var(--fg);background:var(--plate);border:1px solid var(--red);border-radius:3px}
 .confirm::before{content:"";display:block;height:8px;background:repeating-linear-gradient(135deg,var(--red-solid) 0 9px,transparent 9px 18px)}
 .confirm[data-sev=edit]{border-color:var(--amber)}
@@ -340,7 +336,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 .dlg dd{font-family:var(--mono);overflow-wrap:anywhere}
 .dlg menu{display:flex;justify-content:flex-end;gap:8px}
 
-/* 响应式 */
+/* Responsive layout */
 @media(max-width:899px){.n-id{display:none}}
 @media(min-width:720px){
  .top{flex-wrap:nowrap}
@@ -397,7 +393,7 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 </svg>
 
 <header class="top">
- <div class="plate"><span class="model">N56</span><div><h1>n56-patcher</h1><span data-i18n="sub"></span></div></div>
+ <div class="plate"><span class="model">N61</span><div><h1>n61-patcher</h1><span data-i18n="sub"></span></div></div>
  <label class="tgt"><span class="lab" data-i18n="target"></span><span class="sel"><select id="target" autocomplete="off"></select></span></label>
  <label class="tgt"><span class="lab" data-i18n="lang"></span><span class="sel lang"><select id="lang" autocomplete="off"></select></span></label>
  <div class="readout" id="pill" data-s="idle"><i></i><b id="pilltext" role="status"></b><time id="pilltime">--:--</time></div>
@@ -475,39 +471,8 @@ input:focus-visible+.sw{outline:2px solid var(--amber);outline-offset:2px}
 <script>
 const STAGES=%STAGES%;
 const I18N={
- "zh-CN":{
-  sub:"iPhone 6 Plus · 第二系统 iOS 13.7",lang:"语言",target:"目标",stop:"停止",stopping:"停止中…",
-  chain:"启动链",chainHint:"节点状态只记录本次服务运行期间的结果，不代表设备实际状态",stepAria:"当前步骤",closeNotice:"关闭提示",
-  combos:"一键组合",console:"控制台",copy:"复制",copied:"已复制",copyFail:"复制失败",clear:"清屏",clearTitle:"只清空显示，不影响后端缓冲",jump:"回到底部",logEmpty:"尚无输出。选中阶段并点击执行后，日志会显示在这里。",
-  openOpts:"打开选项",options:"选项",close:"关闭",restore:"恢复默认",selectAll:"全选",featNone:"未选 feature：仅构建基础层。",featHint:"功能选择用于构建、自动构建启动和安装阶段，真实依赖自动补齐。",
-  risk:"放宽检查",manualDesc:"执行标记为 manual 的 patch",noid:"不校验设备身份",noidDesc:"boot 时跳过身份检查",input:"输入与覆盖",dp:"Data 加密",dpDefaultEnc:"清单默认（encrypted）",ipswPh:"已导入 DMG 时可留空",bootargs:"boot-args 覆盖",bootargsPh:"留空用清单默认",
-  cancel:"取消",confirm:"确认执行",modified:"改",
-  "tag.sudo":"写盘 · sudo","tag.edit":"写设备","tag.must":"刷机后必做","tag.opt":"可选",
-  "result.run":"运行中","result.ok":"成功","result.dry":"演练通过（未实际执行）","result.fail":"失败","result.stop":"已停止","result.none":"本次未运行",
-  "spec.effect":"影响","spec.need":"前置","spec.perm":"权限","spec.result":"结果",permText:"用 sudo python3 gui.py 启动本界面（dry-run 不需要）",
-  "btn.running":"运行中 · {stage}","btn.offline":"本地服务断开","btn.loading":"加载 feature…","btn.dry":"演练 {name}","btn.run":"执行 {name}",
-  "pill.idle":"空闲","pill.off":"与本地服务断开，重连中…","pill.dryRun":"演练中 · {stage}","pill.run":"运行中 · {stage}","pill.starting":"正在启动…","pill.stage":"阶段","pill.dryOk":"演练通过","pill.ok":"完成","pill.stop":"已停止","pill.fail":"失败","pill.end":"{status} · {stage} · 退出码 {code}",
-  "log.gap":"… 更早的 {n} 行已从显示中移除","log.lines":"{n} 行",
-  "feat.base":"仅基础层","feat.changed":"已改","feat.loading":"加载中…","feat.loadFail":"feature 加载失败。","feat.none":"该目标没有可选 feature。",flagNoid:"跳过身份校验",
-  "dlg.stage":"阶段","dlg.target":"目标","dlg.manifest":"清单默认","dlg.on":"开","dlg.titleEdit":"确认写设备：{name}","dlg.titleWipe":"确认写盘：{name}",
-  "dlg.noteEdit":"此阶段会改动设备（新建/修改卷或向 SystemB 写入文件、改卷 role）。确认设备{ready}。","dlg.noteWipe":"此阶段会写入设备存储（rootfs 全量流写会先清空目标卷）。确认设备{ready}，运行期间不要断开连接。",
-  "ready.ramdisk":"已进 ramdisk","ready.dfu":"处于 DFU",
-  "notice.sudo":"当前未以 root 启动，{stage} 未执行（写盘需 root；dry-run 不受此限）。请退出后用 sudo python3 gui.py 重新启动本界面。","notice.req":"请求失败：{msg}","notice.stop":"停止请求失败：{msg}",
-  s:{
-   ramdisk:{short:"进 ramdisk",note:"DFU → gaster → SSH ramdisk 就绪",effect:"引导 SSH ramdisk，不写设备存储",need:"设备处于 DFU"},
-   "extract-im4m":{short:"重提 IM4M",label:"重提 IM4M（刷机后）",note:"读 NOR 重提本机 IM4M。刷机后必须执行，否则组件可能无法通过校验。",effect:"只读设备，写入本地 state/IM4M.bin",need:"ramdisk 已就绪"},
-   volumes:{short:"建分区 s4/s5",note:"在容器内新建 s4 SystemB / s5 DataB（role 0）。",effect:"写设备：新建卷",need:"ramdisk 已就绪"},
-   rootfs:{short:"写 rootfs",note:"清空目标卷后把 iOS13 rootfs 流式写入 s4，约 25 分钟。",effect:"写设备：清空目标卷后全量写入",need:"ramdisk 已就绪"},
-   "patch-rootfs":{short:"施加 patch",label:"施加 rootfs patch",note:"向 SystemB 写入 overlay，完成收尾并改卷 role。",effect:"写设备：写入文件、改卷 role",need:"ramdisk 已就绪"},
-   build:{short:"构建启动镜像",note:"iBSS / iBEC / DT / TC / KC → img4",effect:"只写本地 build 目录",need:"首次构建需设备处于 DFU（解密 iBSS、iBEC）"},
-   boot:{short:"启动 iOS13",note:"经 DFU 发送启动链，缺组件时先 build。",effect:"向设备发送启动链，不写设备存储",need:"设备处于 DFU"},
-   all:{short:"端到端",note:"缺 iBSS/iBEC 时先解密，再 ramdisk + extract-im4m + volumes + rootfs + patch-rootfs + build + boot",effect:"写设备：清空目标卷后全量写入",need:"设备处于 DFU（流程内自动进 ramdisk）"},
-   status:{short:"查看卷 role",note:"各卷 apfs_role · 需 ramdisk"},
-   list:{short:"列出选挂",note:"当前选挂的 patch"}
-  }
- },
  "en":{
-  sub:"iPhone 6 Plus · Second system iOS 13.7",lang:"Language",target:"Target",stop:"Stop",stopping:"Stopping…",
+  sub:"iPhone 6 / 6 Plus · Second system iOS 13.7",lang:"Language",target:"Target",stop:"Stop",stopping:"Stopping…",
   chain:"Boot chain",chainHint:"Node status only reflects results from this server session, not the actual device state",stepAria:"Current step",closeNotice:"Dismiss notice",
   combos:"Combos",console:"Console",copy:"Copy",copied:"Copied",copyFail:"Copy failed",clear:"Clear",clearTitle:"Clears the display only, not the server buffer",jump:"Back to bottom",logEmpty:"No output yet. Select a stage and run it to see logs here.",
   openOpts:"Open options",options:"Options",close:"Close",restore:"Restore defaults",selectAll:"Select all",featNone:"No features selected: only the base layer is built.",featHint:"Feature selection applies to the build, auto-build boot and install stages. Real dependencies are added automatically.",
@@ -536,85 +501,13 @@ const I18N={
    status:{short:"Volume roles",note:"apfs_role of each volume · needs ramdisk"},
    list:{short:"List selection",note:"Currently selected patches"}
   }
- },
- "zh-TW":{
-  sub:"iPhone 6 Plus · 第二系統 iOS 13.7",lang:"語言",target:"目標",stop:"停止",stopping:"停止中…",
-  chain:"啟動鏈",chainHint:"節點狀態只記錄本次服務執行期間的結果，不代表裝置實際狀態",stepAria:"目前步驟",closeNotice:"關閉提示",
-  combos:"一鍵組合",console:"主控台",copy:"複製",copied:"已複製",copyFail:"複製失敗",clear:"清除",clearTitle:"只清除顯示，不影響後端緩衝",jump:"回到底部",logEmpty:"尚無輸出。選取階段並點擊執行後，日誌會顯示在這裡。",
-  openOpts:"開啟選項",options:"選項",close:"關閉",restore:"恢復預設",selectAll:"全選",featNone:"未選 feature：僅建置基礎層。",featHint:"功能選擇用於建置、自動建置啟動和安裝階段，實際相依項目自動補齊。",
-  risk:"放寬檢查",manualDesc:"執行標記為 manual 的 patch",noid:"不驗證裝置身分",noidDesc:"boot 時略過身分檢查",input:"輸入與覆蓋",dp:"Data 加密",dpDefaultEnc:"清單預設（encrypted）",ipswPh:"已匯入 DMG 時可留空",bootargs:"boot-args 覆蓋",bootargsPh:"留空使用清單預設",
-  cancel:"取消",confirm:"確認執行",modified:"改",
-  "tag.sudo":"寫入磁碟 · sudo","tag.edit":"寫入裝置","tag.must":"刷機後必做","tag.opt":"選用",
-  "result.run":"執行中","result.ok":"成功","result.dry":"演練通過（未實際執行）","result.fail":"失敗","result.stop":"已停止","result.none":"本次未執行",
-  "spec.effect":"影響","spec.need":"前置","spec.perm":"權限","spec.result":"結果",permText:"用 sudo python3 gui.py 啟動本介面（dry-run 不需要）",
-  "btn.running":"執行中 · {stage}","btn.offline":"本機服務已中斷","btn.loading":"載入 feature…","btn.dry":"演練 {name}","btn.run":"執行 {name}",
-  "pill.idle":"閒置","pill.off":"與本機服務中斷，重新連線中…","pill.dryRun":"演練中 · {stage}","pill.run":"執行中 · {stage}","pill.starting":"正在啟動…","pill.stage":"階段","pill.dryOk":"演練通過","pill.ok":"完成","pill.stop":"已停止","pill.fail":"失敗","pill.end":"{status} · {stage} · 結束代碼 {code}",
-  "log.gap":"… 更早的 {n} 行已從顯示中移除","log.lines":"{n} 行",
-  "feat.base":"僅基礎層","feat.changed":"已改","feat.loading":"載入中…","feat.loadFail":"feature 載入失敗。","feat.none":"此目標沒有可選 feature。",flagNoid:"略過身分驗證",
-  "dlg.stage":"階段","dlg.target":"目標","dlg.manifest":"清單預設","dlg.on":"開","dlg.titleEdit":"確認寫入裝置：{name}","dlg.titleWipe":"確認寫入磁碟：{name}",
-  "dlg.noteEdit":"此階段會變更裝置（新建/修改磁碟區或向 SystemB 寫入檔案、變更磁碟區 role）。請確認裝置{ready}。","dlg.noteWipe":"此階段會寫入裝置儲存空間（rootfs 全量串流寫入會先清空目標磁碟區）。請確認裝置{ready}，執行期間不要中斷連線。",
-  "ready.ramdisk":"已進入 ramdisk","ready.dfu":"處於 DFU",
-  "notice.sudo":"目前未以 root 啟動，{stage} 未執行（寫入磁碟需要 root；dry-run 不受此限）。請結束後用 sudo python3 gui.py 重新啟動本介面。","notice.req":"請求失敗：{msg}","notice.stop":"停止請求失敗：{msg}",
-  s:{
-   ramdisk:{short:"進入 ramdisk",note:"DFU → gaster → SSH ramdisk 就緒",effect:"引導 SSH ramdisk，不寫入裝置儲存空間",need:"裝置處於 DFU"},
-   "extract-im4m":{short:"重新提取 IM4M",label:"重新提取 IM4M（刷機後）",note:"讀取 NOR 重新提取本機 IM4M。刷機後必須執行，否則元件可能無法通過驗證。",effect:"唯讀裝置，寫入本機 state/IM4M.bin",need:"ramdisk 已就緒"},
-   volumes:{short:"建立 s4/s5",label:"建立磁碟區 s4/s5",note:"在容器內新建 s4 SystemB / s5 DataB（role 0）。",effect:"寫入裝置：新建磁碟區",need:"ramdisk 已就緒"},
-   rootfs:{short:"寫入 rootfs",note:"清空目標磁碟區後把 iOS13 rootfs 串流寫入 s4，約 25 分鐘。",effect:"寫入裝置：清空目標磁碟區後全量寫入",need:"ramdisk 已就緒"},
-   "patch-rootfs":{short:"套用 patch",label:"套用 rootfs patch",note:"向 SystemB 寫入 overlay，完成收尾並變更磁碟區 role。",effect:"寫入裝置：寫入檔案、變更磁碟區 role",need:"ramdisk 已就緒"},
-   build:{short:"建置啟動映像",note:"iBSS / iBEC / DT / TC / KC → img4",effect:"只寫入本機 build 目錄",need:"首次建置需裝置處於 DFU（解密 iBSS、iBEC）"},
-   boot:{short:"啟動 iOS13",note:"經 DFU 傳送啟動鏈，缺元件時先 build。",effect:"向裝置傳送啟動鏈，不寫入裝置儲存空間",need:"裝置處於 DFU"},
-   all:{short:"端到端",note:"缺 iBSS/iBEC 時先解密，再 ramdisk + extract-im4m + volumes + rootfs + patch-rootfs + build + boot",effect:"寫入裝置：清空目標磁碟區後全量寫入",need:"裝置處於 DFU（流程內自動進入 ramdisk）"},
-   status:{short:"查看磁碟區 role",note:"各磁碟區 apfs_role · 需要 ramdisk"},
-   list:{short:"列出選取項目",note:"目前選取的 patch"}
-  }
- },
- "ja":{
-  sub:"iPhone 6 Plus · セカンドシステム iOS 13.7",lang:"言語",target:"ターゲット",stop:"停止",stopping:"停止中…",
-  chain:"ブートチェーン",chainHint:"ノードの状態はこのサーバー実行中の結果のみで、デバイスの実際の状態ではありません",stepAria:"現在のステップ",closeNotice:"通知を閉じる",
-  combos:"ワンクリック",console:"コンソール",copy:"コピー",copied:"コピーしました",copyFail:"コピー失敗",clear:"クリア",clearTitle:"表示のみクリアし、サーバーのバッファには影響しません",jump:"一番下へ",logEmpty:"出力はまだありません。ステージを選択して実行すると、ここにログが表示されます。",
-  openOpts:"オプションを開く",options:"オプション",close:"閉じる",restore:"デフォルトに戻す",selectAll:"すべて選択",featNone:"feature 未選択：ベースレイヤーのみビルドします。",featHint:"機能の選択はビルド、自動ビルド起動、インストールの各ステージに適用され、依存関係は自動で補完されます。",
-  risk:"チェックの緩和",manualDesc:"manual と指定された patch を実行",noid:"デバイス ID を検証しない",noidDesc:"boot 時に ID チェックをスキップ",input:"入力と上書き",dp:"Data 暗号化",dpDefaultEnc:"マニフェスト既定（encrypted）",ipswPh:"DMG をインポート済みなら空欄可",bootargs:"boot-args の上書き",bootargsPh:"空欄でマニフェスト既定を使用",
-  cancel:"キャンセル",confirm:"実行する",modified:"変更",
-  "tag.sudo":"書き込み · sudo","tag.edit":"デバイス書き込み","tag.must":"復元後に必須","tag.opt":"任意",
-  "result.run":"実行中","result.ok":"成功","result.dry":"ドライラン成功（実行なし）","result.fail":"失敗","result.stop":"停止しました","result.none":"今回は未実行",
-  "spec.effect":"影響","spec.need":"前提","spec.perm":"権限","spec.result":"結果",permText:"sudo python3 gui.py でこの画面を起動（dry-run では不要）",
-  "btn.running":"実行中 · {stage}","btn.offline":"ローカルサーバーから切断","btn.loading":"feature を読み込み中…","btn.dry":"ドライラン：{name}","btn.run":"実行：{name}",
-  "pill.idle":"待機中","pill.off":"ローカルサーバーから切断、再接続中…","pill.dryRun":"ドライラン中 · {stage}","pill.run":"実行中 · {stage}","pill.starting":"起動中…","pill.stage":"ステージ","pill.dryOk":"ドライラン成功","pill.ok":"完了","pill.stop":"停止しました","pill.fail":"失敗","pill.end":"{status} · {stage} · 終了コード {code}",
-  "log.gap":"… 以前の {n} 行を表示から削除しました","log.lines":"{n} 行",
-  "feat.base":"ベースレイヤーのみ","feat.changed":"変更あり","feat.loading":"読み込み中…","feat.loadFail":"feature の読み込みに失敗しました。","feat.none":"このターゲットに選択可能な feature はありません。",flagNoid:"ID 検証をスキップ",
-  "dlg.stage":"ステージ","dlg.target":"ターゲット","dlg.manifest":"マニフェスト既定","dlg.on":"オン","dlg.titleEdit":"デバイス書き込みの確認：{name}","dlg.titleWipe":"ディスク書き込みの確認：{name}",
-  "dlg.noteEdit":"このステージはデバイスを変更します（ボリュームの作成・変更、SystemB へのファイル書き込み、ボリューム role の変更）。デバイスが{ready}ことを確認してください。","dlg.noteWipe":"このステージはデバイスのストレージに書き込みます（rootfs の全量書き込みでは先にターゲットボリュームを消去します）。デバイスが{ready}ことを確認し、実行中は接続を切らないでください。",
-  "ready.ramdisk":"ramdisk に入っている","ready.dfu":"DFU 状態である",
-  "notice.sudo":"root で起動していないため、{stage} は実行されませんでした（書き込みには root が必要です。dry-run は対象外です）。終了して sudo python3 gui.py で再起動してください。","notice.req":"リクエスト失敗：{msg}","notice.stop":"停止リクエスト失敗：{msg}",
-  s:{
-   ramdisk:{short:"ramdisk に入る",note:"DFU → gaster → SSH ramdisk 準備完了",effect:"SSH ramdisk を起動。デバイスのストレージには書き込みません",need:"デバイスが DFU 状態"},
-   "extract-im4m":{short:"IM4M を再抽出",label:"IM4M を再抽出（復元後）",note:"NOR を読み取り、このデバイスの IM4M を再抽出します。復元後は必須で、実行しないとコンポーネントが検証を通らない場合があります。",effect:"デバイスは読み取りのみ。ローカルの state/IM4M.bin に書き込みます",need:"ramdisk 準備完了"},
-   volumes:{short:"s4/s5 を作成",label:"ボリューム s4/s5 を作成",note:"コンテナ内に s4 SystemB / s5 DataB（role 0）を作成します。",effect:"デバイス書き込み：ボリュームを作成",need:"ramdisk 準備完了"},
-   rootfs:{short:"rootfs を書き込み",note:"ターゲットボリュームを消去し、iOS 13 の rootfs を s4 にストリーム書き込みします。約 25 分かかります。",effect:"デバイス書き込み：ターゲットボリュームを消去して全量書き込み",need:"ramdisk 準備完了"},
-   "patch-rootfs":{short:"patch を適用",label:"rootfs patch を適用",note:"SystemB に overlay を書き込み、仕上げを行ってボリューム role を変更します。",effect:"デバイス書き込み：ファイル書き込み、ボリューム role の変更",need:"ramdisk 準備完了"},
-   build:{short:"イメージをビルド",label:"ブートイメージをビルド",note:"iBSS / iBEC / DT / TC / KC → img4",effect:"ローカルの build ディレクトリのみ書き込み",need:"初回ビルドではデバイスを DFU にする必要があります（iBSS、iBEC の復号）"},
-   boot:{short:"iOS 13 を起動",note:"DFU 経由でブートチェーンを送信します。コンポーネントが不足していれば先に build します。",effect:"ブートチェーンを送信。デバイスのストレージには書き込みません",need:"デバイスが DFU 状態"},
-   all:{short:"エンドツーエンド",note:"iBSS/iBEC がなければ先に復号し、ramdisk + extract-im4m + volumes + rootfs + patch-rootfs + build + boot を実行",effect:"デバイス書き込み：ターゲットボリュームを消去して全量書き込み",need:"デバイスが DFU 状態（フロー内で自動的に ramdisk に入ります）"},
-   status:{short:"ボリューム role",note:"各ボリュームの apfs_role · ramdisk が必要"},
-   list:{short:"選択を一覧表示",note:"現在選択中の patch"}
-  }
  }
 };
-const LANGS=[["zh-CN","简体中文"],["en","English"],["zh-TW","繁體中文"],["ja","日本語"]];
-function detectLang(){
- try{const s=localStorage.getItem('n56-lang');if(I18N[s])return s}catch(e){}
- for(const l of navigator.languages||[navigator.language]){
-  const x=(l||'').toLowerCase();
-  if(/^zh-(tw|hk|mo|hant)/.test(x))return 'zh-TW';
-  if(x.startsWith('zh'))return 'zh-CN';
-  if(x.startsWith('ja'))return 'ja';
-  if(x.startsWith('en'))return 'en';
- }
- return 'en';
-}
+const LANGS=[["en","English"]];
+function detectLang(){return "en";}
 let lang=detectLang();
 function t(key,vars){
- const s=I18N[lang][key]??I18N['zh-CN'][key]??key;
+ const s=I18N[lang][key]??I18N['en'][key]??key;
  return vars?s.replace(/\{(\w+)\}/g,(m,k)=>k in vars?vars[k]:m):s;
 }
 const st=(id,f)=>(I18N[lang].s[id]||{})[f]||'';
@@ -667,11 +560,11 @@ async function j(u,o){
  return r.json();
 }
 
-/* ---------- 运行状态：全部从日志流推导，刷新页面后也能恢复 ---------- */
+/* ---------- Run state is derived from the log stream and restored after refresh ---------- */
 const FLOW=STAGES.filter(id=>(META[id]||{}).group==='flow');
 const state={active:null,sub:null,activeDry:false,pending:false,stopping:false,online:true,startedAt:0,last:null,results:{}};
 let stopTimer=0,selected=FLOW[0],replaying=true,stepKey='';
-const RUN_LINE=/^\$ .*n56patcher\.py (\S+)/,END_LINE=/阶段结束，退出码 (-?\d+)/,SUB_LINE=/^\[>\] (\S+)/;
+const RUN_LINE=/^\$ .*n56patcher\.py (\S+)/,END_LINE=/Stage finished, exit code (-?\d+)/,SUB_LINE=/^\[>\] (\S+)/;
 const label=id=>st(id,'label')||st(id,'short')||id;
 const rows={};
 const title=id=>st(id,'short')||id;
@@ -690,7 +583,7 @@ function enterSub(id){
  markSub('ok');
  state.sub=id;state.results[id]='run';
 }
-// 端到端运行时带上当前子阶段和进度，其他阶段只显示 ID
+// Show the current substage and progress for end-to-end runs; otherwise show the ID.
 function activeName(){
  if(!state.sub)return state.active;
  const ms=META[state.active].members;
@@ -707,7 +600,7 @@ function trackLine(line){
   finish(+m[1]);
  }else if((m=line.match(SUB_LINE))){
   enterSub(m[1]);
- }else if(line.includes('[ERROR] 启动失败')){
+ }else if(line.includes('[ERROR] Failed to start')){
   finish(1);
  }
 }
@@ -718,7 +611,7 @@ function finish(code){
  markSub(kind);state.sub=null;
  state.last={stage,code,kind,dry:state.activeDry};
  state.active=null;state.stopping=false;clearTimeout(stopTimer);
- // 成功后选中下一步（只选中，不运行）；用户已切到别的阶段时不打扰
+ // Select the next step after success without running it; preserve any user selection.
  if(kind==='ok'&&stage===selected){const n=nextFlow(stage);if(n)selected=n}
 }
 function isBusy(){return state.pending||!!state.active||!state.online||!$('target').value}
@@ -798,7 +691,7 @@ function render(){
  pill.dataset.s=s;
  if($('pilltext').textContent!==text)$('pilltext').textContent=text;
  tickTimer();
- document.title=(state.active?'▶ '+activeName()+' — ':'')+'n56-patcher';
+ document.title=(state.active?'▶ '+activeName()+' — ':'')+'n61-patcher';
 }
 function select(id){
  selected=id;
@@ -806,7 +699,7 @@ function select(id){
  if(matchMedia('(max-width:999px)').matches)$('run').scrollIntoView({block:'nearest'});
 }
 
-/* ---------- 日志 ---------- */
+/* ---------- Logs ---------- */
 const logEl=$('log');
 let off=0,tail='',tailEl=null,follow=true,lineCount=0,dropped=0,gapEl=null,inflight=null;
 const ANSI=/\x1b\[[0-9;]*[A-Za-z]/g;
@@ -840,7 +733,7 @@ function trimLog(){
  renderLogMeta();
 }
 function ingest(text){
- // 元素可能以换行开头、含多行或缺结尾换行，故按整段拼接后再切行
+ // Chunks may contain multiple lines or partial lines; concatenate before splitting.
  const parts=(tail+text.replace(ANSI,'')).split('\n');
  tail=parts.pop();
  if(tailEl){tailEl.remove();tailEl=null;lineCount--}
@@ -862,7 +755,7 @@ function clearDisplay(){
  $('logcount').textContent='';follow=true;$('jump').hidden=true;
 }
 function resetAll(){
- // 服务重启后日志缓冲归零：丢弃本地推导的全部状态
+ // Clear derived local state if the server restarts and its log buffer resets.
  clearDisplay();off=0;tail='';selected=FLOW[0];replaying=true;
  Object.assign(state,{active:null,sub:null,activeDry:false,stopping:false,last:null,results:{}});
 }
@@ -876,7 +769,7 @@ function pull(){
    if(d.lines.length)ingest(d.lines.join(''));
    off=d.off;
    replaying=false;
-   // 用后端记录的开始时间，刷新页面后计时仍准
+   // Use the server start time so elapsed time survives page refreshes.
    if(state.active&&d.started)state.startedAt=d.started*1000;
   }catch(e){
    state.online=false;
@@ -904,7 +797,7 @@ $('logcopy').addEventListener('click',async()=>{
  setTimeout(()=>{btn.textContent=t('copy')},1200);
 });
 
-/* ---------- 目标、feature 与选项 ---------- */
+/* ---------- Targets, features and options ---------- */
 let featToken=0,featDefault=[],targetsLoaded=false,featsReady=false,featMsg='';
 function setFeatMsg(key){featMsg=key;$('feats').textContent=t(key)}
 function featInputs(){return [...document.querySelectorAll('[data-f]')]}
@@ -958,6 +851,7 @@ async function loadFeats(){
 async function loadTargets(){
  const ts=await j('/api/targets');
  $('target').replaceChildren(...ts.map(t=>h('option',null,t)));
+ if(ts.includes('n61-ios13'))$('target').value='n61-ios13';
  targetsLoaded=true;
  render();
  loadFeats();
@@ -973,7 +867,7 @@ $('closeopts').addEventListener('click',()=>drawer.close());
 drawer.addEventListener('click',e=>{if(e.target===drawer)drawer.close()});
 for(const ev of ['input','change'])drawer.addEventListener(ev,renderFlags);
 
-/* ---------- 阶段 ---------- */
+/* ---------- Stages ---------- */
 function mkStages(){
  let flowNum=0;
  for(const id in rows)delete rows[id];
@@ -1043,21 +937,21 @@ async function run(stage){
  }catch(e){
   notice('notice.req',{msg:e.message});
  }
- // 起跑那一行已在后端入缓冲；再拉两次（第一次可能复用发请求前的那轮）后才解除 pending
+ // The start line is buffered on the server; poll twice before clearing pending state.
  await pull();await pull();
  state.pending=false;render();
 }
 $('stop').addEventListener('click',async()=>{
  state.stopping=true;render();
  clearTimeout(stopTimer);
- // 进程可能恰好尚未 spawn，后端不会有回应；超时后允许再点一次
+ // The process may not have spawned yet; allow another attempt after the timeout.
  stopTimer=setTimeout(()=>{state.stopping=false;render()},4000);
  try{await j('/api/stop',{method:'POST'})}
  catch(e){state.stopping=false;notice('notice.stop',{msg:e.message});render()}
  pull();
 });
 
-/* ---------- 启动 ---------- */
+/* ---------- Startup ---------- */
 async function loop(){
  await pull();
  if(!targetsLoaded&&state.online)loadTargets().catch(()=>{});
@@ -1099,7 +993,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/targets":
             return self._send(200, list_targets())
         if u.path == "/api/features":
-            t = parse_qs(u.query).get("target", ["n56-ios13"])[0]
+            t = parse_qs(u.query).get("target", ["n61-ios13"])[0]
             sel, allf = target_features(t)
             return self._send(200, {"sel": sel, "all": allf})
         if u.path == "/api/log":
@@ -1119,7 +1013,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
             args = self._build_args(body)
             if body["stage"] in SUDO_STAGES and not body.get("dry") and os.geteuid() != 0:
-                RUNNER.put(f"[!] {body['stage']} 需要 root。请用终端运行：\n    sudo "
+                RUNNER.put(f"[!] {body['stage']} requires root. Run this in Terminal:\n    sudo "
                            + " ".join(args) + "\n")
                 return self._send(200, {"ok": False, "reason": "need-sudo"})
             ok = RUNNER.start(args)
@@ -1128,7 +1022,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _build_args(self, b):
         a = [sys.executable, os.path.join(REPO, "n56patcher.py"), b["stage"],
-             "--target", b.get("target", "n56-ios13")]
+             "--target", b.get("target", "n61-ios13")]
         if "features" in b and b["stage"] in ("build", "boot", "patch-rootfs", "install", "all", "list"):
             a += ["--features", ",".join(b["features"])]
         if b.get("dry"):
@@ -1155,7 +1049,7 @@ def main():
     args = ap.parse_args()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
-    print(f"n56-patcher GUI: {url}  (Ctrl-C 退出)")
+    print(f"n61-patcher GUI: {url}  (Ctrl-C to quit)")
     try:
         import webbrowser
         webbrowser.open(url)
@@ -1164,7 +1058,7 @@ def main():
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        print("\n退出。")
+        print("\nExiting.")
 
 
 if __name__ == "__main__":

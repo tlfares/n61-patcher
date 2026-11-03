@@ -25,11 +25,11 @@ def main():
     globals_map = {
         hex(LOG_DEFAULT): dict(id='_os_log_default', kind='address', to=hex(log_target),
                                target_symbol='__os_log_default', reference_pcs=uses[LOG_DEFAULT],
-                               how='音频以此地址作为 _os_log_internal 的 log 参数。12 的 0x7cecc30 与 13 的 _os_log_create=0x75e3388 各用三指令返回默认日志对象地址。'),
+                               how='Audio uses this address as the log argument of _os_log_internal. iOS 12 0x7cecc30 and iOS 13 _os_log_create=0x75e3388 each return the default log-object address in three instructions.'),
         hex(STACK_GUARD): dict(id='__stack_chk_guard', kind='value_address',
                                to=symbols['___stack_chk_guard'], target_symbol='___stack_chk_guard',
                                reference_pcs=uses[STACK_GUARD],
-                               how='音频从此地址读取 64 位 stack guard；13 导出 ___stack_chk_guard=0x76eb000。'),
+                               how='Audio reads the 64-bit stack guard here; iOS 13 exports ___stack_chk_guard=0x76eb000.'),
     }
     for slot in META_SLOTS:
         source_meta = real(struct.unpack('<Q', source.read(slot, 8))[0])
@@ -46,8 +46,8 @@ def main():
                                       target_existing_pointer_slot=hex(target_pointer_slot),
                                       reference_pcs=uses[slot],
                                       source_class_initializer=source_class['initializer'],
-                                      how=f'旧 RO 槽指向 {name} 的 gMetaClass；名称由源 OSMetaClass 初始化实参确认，13 原生 metaClass 指针槽读回同一目标 gMetaClass。',
-                                      resolution='在注入 RO 段写入 target_pointee，并把旧 LDR 槽地址映射到新槽。')
+                                      how=f'The old read-only slot points to {name}::gMetaClass. Source OSMetaClass initializer arguments confirm its name; the native iOS 13 metaClass slot points to the same target gMetaClass.',
+                                      resolution='Write target_pointee into the injected read-only segment and map the old LDR slot address to the new slot.')
     path = HERE / 'kernel-extern-map.json'
     report = json.loads(path.read_text())
     report['data_globals'] = globals_map

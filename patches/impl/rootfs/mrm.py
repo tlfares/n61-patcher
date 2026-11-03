@@ -34,7 +34,7 @@ def build_mrm(ctx):
     for name in names:
         source = os.path.join(n66, "System/Library/LaunchDaemons", name)
         if not os.path.exists(source):
-            log.die(f"N66 rootfs 缺少 launchd plist: {name}")
+            log.die(f"N66 rootfs is missing launchd plist: {name}")
         daemons["/System/Library/LaunchDaemons/" + name] = plistlib.load(open(source, "rb"))
     if phone_apps:
         extensions = cache.setdefault("AppExtensions", {})
@@ -57,5 +57,5 @@ def build_mrm(ctx):
     result = subprocess.run(["codesign", "-d", "-vvvv", "--detached", sig_path, plist_path],
                             capture_output=True, text=True)
     if result.returncode:
-        log.die("mrm 分离签名校验失败")
+        log.die("Detached mrm signature verification failed")
     return {"plist": plist_path, "sig": sig_path}

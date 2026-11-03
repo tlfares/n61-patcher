@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""rootfs 收尾（最后一步）：把 s4/s5 的 apfs_role 改成 System(0x1)/Data(0x40)。
+"""Assign System(0x1)/Data(0x40) APFS roles after finalization.
 
-移植自 install_ios13.sh cmd_roles（调 apfs_setrole.py --write）。
-必须在 finish 卸载完所有卷之后做（改 role 要求目标卷未挂载）。
-role 值与卷号来自目标清单 volumes.roles。
-"""
+All target volumes must be unmounted before writing roles. Slice numbers
+and roles come from the target profile's volumes.roles mapping."""
 from core.apfs import Apfs
 from core.patch import Patch
 

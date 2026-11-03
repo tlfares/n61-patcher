@@ -193,7 +193,7 @@ def compact(source, destination):
     for index, offset in rebase_slots(data, start, size):
         position = old[index]['file'] + offset
         value = struct.unpack_from('<Q', data, position)[0]
-        # Swift _StringObject 等带高位判别标志的指针：仅平移低 56 位，保留高字节标志。
+        # Relocate only the low 56 bits of tagged Swift pointers; preserve the high flag byte.
         low = value & 0x00FFFFFFFFFFFFFF
         if value & 0x8000000000000000 and owner(low) is not None:
             moved = (value & 0xFF00000000000000) | move(low)

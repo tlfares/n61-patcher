@@ -1,15 +1,12 @@
-"""APFS 卷操作：建 SystemB/DataB + 事后改 apfs_role（经 ramdisk 的 dd）。
+"""APFS volume creation and raw superblock role updates through the SSH ramdisk.
 
-移植自 apfs_setrole.py。为什么 role 要事后改：
-  newfs_apfs(libapfs) 建卷时把 System 强制放进 fs 槽位 0、Data 放进槽位 1，
-  这两个槽被 iOS12 的卷占用，所以 SystemB/DataB 只能先以 role 0 建出来，
-  最后直接改卷超级块的 apfs_role 字段(偏移 0x3C4)并重算 Fletcher-64。
-  iOS12 的卷都是 role 0，0x1/0x40 在容器内唯一，不冲突。
-
-所有读写都是 /dev/rdisk0s1 的 4K 原始块（raw 节点在卷挂载时仍可读写），
-写前本地备份、写后读回校验。
-"""
+newfs_apfs assigns System and Data to filesystem slots 0 and 1, already occupied
+by iOS 12. Create SystemB/DataB with role 0, then update apfs_role at 0x3c4 and
+recompute Fletcher-64. Roles 0x1/0x40 must remain unique in the container.
+Raw I/O uses 4 KiB blocks on /dev/rdisk0s1. Back up each block before writing
+and compare the readback with the expected bytes."""
 import os
+import re
 import struct
 import subprocess
 import time
@@ -22,7 +19,7 @@ ROLE_OFF = 0x3C4
 NAME_OFF = 0x2C0
 FS_FLAGS_OFF = 0x108            # apfs_fs_flags (u64)；bit0=APFS_FS_UNENCRYPTED
 APFS_FS_UNENCRYPTED = 0x1
-ALLOC_COUNT_OFF = 0x58          # apfs_fs_alloc_count (u64)：卷已用块数（不挂载即可读）
+ALLOC_COUNT_OFF = 0x58          # apfs_fs_alloc_count (u64)：allocated volume blocks (read without mounting)
 
 
 def human(n):
@@ -45,11 +42,11 @@ class Apfs:
     def ssh(self):
         return self.ctx.ssh
 
-    # ---- 原始块读写 ----
+    # ---- Raw block I/O ----
     def read_block(self, n):
         b = self.ssh.sh(f"dd if={RDEV} bs={BS} skip={n} count=1 2>/dev/null")
         if len(b) != BS:
-            log.die(f"块 {n} 读取长度异常: {len(b)}")
+            log.die(f"Unexpected read length for block {n}: {len(b)}")
         return b
 
     def write_block(self, n, data):
@@ -57,7 +54,7 @@ class Apfs:
         self.ssh.sh(f"dd of={RDEV} bs={BS} seek={n} count=1 conv=notrunc 2>/dev/null && sync",
                     data=data)
 
-    # ---- Fletcher-64 校验和 ----
+    # ---- Fletcher-64 checksum ----
     @staticmethod
     def fletcher64(block):
         s1 = s2 = 0
@@ -76,11 +73,11 @@ class Apfs:
         struct.pack_into("<Q", b, 0, self.fletcher64(b))
         return bytes(b)
 
-    # ---- 遍历卷 ----
+    # ---- Volume enumeration ----
     def _latest_nxsb(self):
         nx = self.read_block(0)
         if nx[32:36] != b"NXSB":
-            log.die("块 0 不是 APFS 容器超级块")
+            log.die("Block 0 is not an APFS container superblock")
         xp_blocks = struct.unpack_from("<I", nx, 0x68)[0] & 0x7FFFFFFF
         xp_base = struct.unpack_from("<Q", nx, 0x70)[0]
         best = nx
@@ -92,7 +89,7 @@ class Apfs:
         return best
 
     def volumes(self):
-        """[(sN, paddr, superblock)]，按 fs 槽位顺序。"""
+        """Return [(sN, paddr, superblock)] in filesystem slot order."""
         nx = self._latest_nxsb()
         omap_oid = struct.unpack_from("<Q", nx, 0xA0)[0]
         max_fs = struct.unpack_from("<I", nx, 0xB4)[0]
@@ -101,7 +98,7 @@ class Apfs:
         tree = self.read_block(struct.unpack_from("<Q", om, 0x30)[0])
         flags, level, nkeys = struct.unpack_from("<HHI", tree, 32)
         if level != 0:
-            log.die("omap 树不是单叶，解析器需扩展")
+            log.die("The omap tree has multiple leaves; this parser needs extending")
         toff, tlen = struct.unpack_from("<HH", tree, 40)
         keystart = 56 + toff + tlen
         valend = BS - (40 if flags & 1 else 0)
@@ -117,7 +114,7 @@ class Apfs:
             paddr = m[oid][1]
             sb = self.read_block(paddr)
             if sb[32:36] != b"APSB":
-                log.die(f"s{idx}: 块 {paddr} 不是卷超级块")
+                log.die(f"s{idx}: block {paddr} is not a volume superblock")
             out.append((idx, paddr, sb))
         return out
 
@@ -127,16 +124,16 @@ class Apfs:
         ck = "ok" if self.checksum_ok(sb) else "BAD"
         return (f"s{idx}  slot={idx - 1}  {name:16s} "
                 f"role=0x{role:x} ({ROLES.get(role, '?')})  {self.enc_state(sb):11s}  "
-                f"已用 {human(self.used_bytes(sb)):>10s}  block={paddr}  cksum={ck}")
+                f"used {human(self.used_bytes(sb)):>10s}  block={paddr}  cksum={ck}")
 
-    # ---- 加密状态（与 role 是独立字段）----
+    # ---- Encryption state (independent of role)----
     def fs_flags(self, sb):
         return struct.unpack_from("<Q", sb, FS_FLAGS_OFF)[0]
 
     def enc_state(self, sb):
         return "UNENCRYPTED" if self.fs_flags(sb) & APFS_FS_UNENCRYPTED else "encrypted"
 
-    # ---- 已用空间（apfs_fs_alloc_count × 块大小；不挂载即可读）----
+    # ---- Allocated space (apfs_fs_alloc_count × block size; readable without mounting)----
     def alloc_count(self, sb):
         return struct.unpack_from("<Q", sb, ALLOC_COUNT_OFF)[0]
 
@@ -149,65 +146,106 @@ class Apfs:
         total = struct.unpack_from("<Q", nx, 0x28)[0] * blk     # nx_block_count × block_size
         vols = self.volumes()
         used_sum = sum(self.used_bytes(sb) for _, _, sb in vols)
-        log.log(f"容器 disk0s1：容量 {human(total)}，各卷已用合计 {human(used_sum)}"
-                f"（APFS 空间共享，单卷无固定上限）")
+        log.log(f"Container disk0s1: capacity {human(total)}, total volume usage {human(used_sum)}"
+                f" (APFS space is shared; individual volumes have no fixed limit)")
         for v in vols:
             log.log(self.describe(*v))
         return vols
 
-    # ---- 建卷 ----
-    def create_volumes(self, names=("SystemB", "DataB"), encrypt_data=False):
-        """若 s4/s5 不存在则建（role 0）。encrypt_data 时给 Data 卷加 -P 开内容保护。
+    def validate_layout(self, require_second_system=False):
+        """Reject unexpected slice layouts before any installation writes.
 
-        加密与 role 是独立字段：建卷时 -P 置加密标志，事后照旧 apfs_setrole 改 role，
-        不冲突（见 sep_bringup/20261030/data-encryption/FINDINGS.md 第2点）。
-        iOS12 ramdisk 的 newfs_apfs 中 -P/-E 均进入 "encrypted" 选项分支（已逆向确认）。
-        返回是否新建。
+        This workflow supports native slices s1/s2/s3 followed only by the
+        named SystemB/DataB pair. A matching slice number alone is not enough
+        to authorize clearing a volume that may belong to another setup.
         """
+        mounts = self.ctx.t["mounts"]
+        if (mounts.get("system12"), mounts.get("system_b"), mounts.get("data_b")) != (1, 4, 5):
+            log.die("This installer supports only SystemA=s1, SystemB=s4 and DataB=s5")
+        volumes = self.volumes()
+        indices = [index for index, _, _ in volumes]
+        if indices not in ([1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]):
+            log.die(f"Unsupported APFS volume layout: {indices}; expected native s1/s2/s3 and optional SystemB/DataB")
+        device_indices = sorted(int(match.group(1)) for path in self.ssh.slices()
+                                if (match := re.fullmatch(r"/dev/disk0s1s([0-9]+)", path)))
+        if device_indices != indices:
+            log.die(f"APFS metadata and device slices disagree: {indices} versus {device_indices}")
+        for index, _, superblock in volumes:
+            if not self.checksum_ok(superblock):
+                log.die(f"s{index} has an invalid superblock checksum; refusing installation writes")
+        by_index = {index: superblock for index, _, superblock in volumes}
+        expected_names = {3: "Baseband Data", 4: "SystemB", 5: "DataB"}
+        allowed_roles = {3: (0, 0x80), 4: (0, 0x1), 5: (0, 0x40)}
+        for index, expected in expected_names.items():
+            if index not in by_index:
+                continue
+            superblock = by_index[index]
+            name = superblock[NAME_OFF:NAME_OFF + 256].split(b"\0", 1)[0].decode(errors="replace")
+            role = struct.unpack_from("<H", superblock, ROLE_OFF)[0]
+            if name != expected or role not in allowed_roles[index]:
+                log.die(f"s{index} is {name!r} with role 0x{role:x}; expected {expected!r}. "
+                        "Refusing to reuse an unrelated or unsupported volume")
+        if require_second_system and 5 not in by_index:
+            log.die("SystemB/DataB are not both present; run the volumes stage before writing the rootfs")
+        self.ctx.verify_device_system(self.ssh)
+        log.log("Validated native APFS layout and SystemB/DataB destinations")
+        return volumes
+
+    # ---- Volume creation ----
+    def create_volumes(self, names=("SystemB", "DataB"), encrypt_data=False):
+        """Create missing s4/s5 volumes with role 0. Use -P for Data content protection when encrypt_data is set.
+
+        Encryption and role are independent fields: -P sets encryption at creation; apfs_setrole changes role afterward.
+        These settings do not conflict.
+        The iOS 12 ramdisk newfs_apfs routes both -P and -E to its encrypted option.
+        Return whether a volume was created.
+        """
+        self.validate_layout()
         s = self.ssh.slices()
         if any("disk0s1s5" in x for x in s):
-            log.log(f"s4/s5 已存在，跳过: {' '.join(s)}")
+            log.log(f"s4/s5 already exist; skipping: {' '.join(s)}")
             return False
         if any("disk0s1s4" in x for x in s):
-            # 上次建 DataB 中断时会留下 s4，补建 DataB 即可
-            log.warn(f"s4 已存在，只补建 {names[-1]}: {' '.join(s)}")
+            # If creation stopped after SystemB, only DataB remains to be created
+            log.warn(f"s4 exists; creating only {names[-1]}: {' '.join(s)}")
             names = names[1:]
         if encrypt_data:
-            # 未加载 SEP 时 -P 建卷会一直卡住，并锁住整个容器
+            # Creating a -P volume before loading SEP can hang and lock the container
             self.ssh.mount(self.ctx.t["mounts"]["system12"], "/mnt1", ro=True)
             self.ssh.ensure_sep()
         cmds = []
         for n in names:
             flag = " -P" if (encrypt_data and "Data" in n) else ""
             cmds.append(f"/sbin/newfs_apfs -A{flag} -v {n} /dev/disk0s1")
-            log.log(f"建卷 {n} (role 0{', 加密' if flag else ''})…")
+            log.log(f"Creating volume {n} (role 0{', encrypted' if flag else ''})…")
         try:
             self.ssh.sh(" && ".join(cmds))
         except subprocess.TimeoutExpired:
-            log.die("建卷超时，容器可能已被锁住。请重启设备进入 DFU 后重试。")
+            log.die("Volume creation timed out; the container may be locked. Reboot into DFU and try again.")
         if encrypt_data:
             self.ssh.umount("/mnt1")
-        log.log(f"当前卷: {' '.join(self.ssh.slices())}")
+        self.validate_layout(require_second_system=True)
+        log.log(f"Current volumes: {' '.join(self.ssh.slices())}")
         if encrypt_data:
             self.report_data_encryption(names)
         return True
 
     def report_data_encryption(self, names):
-        """建卷后核验 Data 卷的实际加密状态。"""
+        """Check actual Data volume encryption after creation."""
         data_name = next((n for n in names if "Data" in n), None)
         for idx, paddr, sb in self.volumes():
             nm = sb[NAME_OFF:NAME_OFF + 256].split(b"\0")[0].decode(errors="replace")
             if nm == data_name:
                 st = self.enc_state(sb)
-                log.log(f"  {nm} 实际加密状态: {st} (apfs_fs_flags=0x{self.fs_flags(sb):x})")
+                log.log(f"  {nm} actual encryption state: {st} (apfs_fs_flags=0x{self.fs_flags(sb):x})")
                 if st == "UNENCRYPTED":
-                    log.warn(f"  {nm} 仍为 UNENCRYPTED：当前 ramdisk 的 newfs_apfs 未置加密位，"
-                             "请核对格式器是否支持 -P（见 data-encryption/FINDINGS.md）。")
+                    log.warn(f"  {nm} remains UNENCRYPTED: this ramdisk newfs_apfs did not set the encryption flag; "
+                             "check that the formatter supports -P.")
                 return
 
-    # ---- 改 role ----
+    # ---- Update roles ----
     def set_roles(self, targets, write=False):
-        """targets: {卷号: role}；write=False 仅 dry-run。改前需卸载目标卷。"""
+        """targets maps volume numbers to roles; write=False is a dry run. Unmount target volumes first."""
         vols = self.volumes()
         for v in vols:
             log.log(self.describe(*v))
@@ -216,7 +254,7 @@ class Apfs:
             mnt = self.ssh.sh("/sbin/mount").decode(errors="replace")
             for idx in targets:
                 if f"/dev/disk0s1s{idx} " in mnt:
-                    log.die(f"s{idx} 已挂载，先卸载")
+                    log.die(f"s{idx} is mounted; unmount it first")
 
         used = {struct.unpack_from("<H", sb, ROLE_OFF)[0]: idx
                 for idx, _, sb in vols if idx not in targets}
@@ -225,12 +263,12 @@ class Apfs:
         for idx, role in sorted(targets.items()):
             vol = next((v for v in vols if v[0] == idx), None)
             if vol is None:
-                log.die(f"s{idx} 不存在")
+                log.die(f"s{idx} does not exist")
             _, paddr, sb = vol
             if not self.checksum_ok(sb):
-                log.die(f"s{idx}: 现有校验和无效，拒绝改动")
+                log.die(f"s{idx}: existing checksum is invalid; refusing to write")
             if role and role in used:
-                log.die(f"role 0x{role:x} 已被 s{used[role]} 占用")
+                log.die(f"role 0x{role:x} is already assigned to s{used[role]}")
             new = bytearray(sb)
             struct.pack_into("<H", new, ROLE_OFF, role)
             new = self.with_checksum(new)
@@ -243,8 +281,8 @@ class Apfs:
                 f.write(sb)
             self.write_block(paddr, new)
             if self.read_block(paddr) != new:
-                log.die(f"s{idx}: 读回不一致！用备份恢复: {bak}")
-            log.log(f"  已写入并校验（备份: {bak}）")
+                log.die(f"s{idx}: Readback mismatch! Restore the backup: {bak}")
+            log.log(f"  Written and verified (backup: {bak})")
         if write:
             for v in self.volumes():
                 log.log(self.describe(*v))

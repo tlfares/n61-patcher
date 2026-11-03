@@ -1,5 +1,5 @@
 // mkcomplzss <in-raw-kernel> <out-complzss>
-// 用 img4lib 的 compress_lzss 生成 Apple complzss 载荷 (供 img4 -R 打包成 rkrn)。
+// Use img4lib compress_lzss to generate an Apple complzss payload for img4 -R packaging as rkrn.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

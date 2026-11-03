@@ -97,13 +97,21 @@ class Ramdisk:
     def start_proxy(self):
         if self._proxy and self._proxy.poll() is None:
             return
-        # Reuse an existing iproxy, or start one
-        if subprocess.run(["pgrep", "-x", "iproxy"], capture_output=True).returncode == 0:
-            return
+        # Do not reuse an arbitrary iproxy process: it may forward another
+        # port or another connected device, producing misleading SSH auth
+        # failures against the ramdisk.
         self._proxy = subprocess.Popen(
-            [self.ctx.tool("iproxy"), str(self.port), "22"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(2)
+            [self.ctx.tool("iproxy"), f"{self.port}:22"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        time.sleep(1)
+        if self._proxy.poll() is not None:
+            _, err = self._proxy.communicate()
+            self._proxy = None
+            detail = (err or b"").decode(errors="replace").strip()
+            suffix = f" ({detail})" if detail else ""
+            log.die(f"Could not start iproxy on local port {self.port}{suffix}. "
+                    "A stale proxy or another listener may be occupying that port; "
+                    "stop that listener and retry.")
 
     def wait_ssh(self, boot=False, tries=120):
         self.start_proxy()
@@ -116,7 +124,12 @@ class Ramdisk:
         log.die("Ramdisk SSH is unavailable" + (" (the ramdisk may not have booted)" if boot else "; run the ramdisk stage first"))
 
     def _alive(self):
-        return subprocess.run(self._ssh_base + ["true"], capture_output=True).returncode == 0
+        r = subprocess.run(self._ssh_base + ["true"], capture_output=True, timeout=15)
+        if b"Permission denied" in (r.stderr or b""):
+            log.die(f"SSH answered on local port {self.port} but rejected the configured ramdisk login. "
+                    "Check for a stale iproxy, another connected iPhone, or a changed ramdisk password; "
+                    "the installer stopped before issuing remote commands.")
+        return r.returncode == 0
 
     def ensure(self):
         """Ensure SSH is available; rootfs streaming may have stopped iproxy."""

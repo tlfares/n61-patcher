@@ -15,9 +15,9 @@ def words(*values):
 
 
 class PaddingTests(unittest.TestCase):
-    def test_unannotated_zero_still_fails(self):
+    def test_invalid_instruction_still_fails(self):
         with self.assertRaises(ValueError):
-            instructions(words(0x14000002, 0, 0xd65f03c0), 0x1000)
+            instructions(words(0x14000002, 0xffffffff, 0xd65f03c0), 0x1000)
 
     def test_audited_unreachable_zero_is_preserved(self):
         raw = words(0x14000002, 0, 0xd65f03c0)

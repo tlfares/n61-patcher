@@ -100,7 +100,7 @@ TARGET = {
     },
     # Features select the default full build; --patches overrides KC alone.
     "features": [
-        "pmu", "touch", "charging", "chestnut", "wifi",
+        "pmu", "touch", "charging", "chestnut", "wifi", "vibration",
         "core",       # rootfs stream, finalization, roles and native model files
         "ui",         # icons, keyboard, Control Center, SpringBoard, Settings
         "bluetooth",  # iOS 12 Bluetooth userland compatibility

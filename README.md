@@ -2,7 +2,7 @@
 
 This fork of [CelestialSayuki/n56-patcher](https://github.com/CelestialSayuki/n56-patcher) adds an **iPhone 6, non-Plus (N61AP / iPhone7,2)** profile to the original iPhone 6 Plus project.
 
-The test iPhone 6 reached SpringBoard, completed activation and downloaded apps from the App Store. The port remains experimental: **Touch ID does not work**, vibration is still experimental, audio is not enabled in the default N61 profile, and other hardware has not been comprehensively tested. Booting iOS 13 requires the patched USB boot chain and the Mac-side boot bundle.
+The test iPhone 6 reached SpringBoard, completed activation and downloaded apps from the App Store. The port remains experimental: **Touch ID does not work**, vibration works on the tested device, speaker audio works on that device, while other audio paths remain unverified, and other hardware has not been comprehensively tested. Booting iOS 13 requires the patched USB boot chain and the Mac-side boot bundle.
 
 ## Start here
 

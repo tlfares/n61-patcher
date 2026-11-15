@@ -401,6 +401,15 @@ class Flow:
         for patch in self.sel.get("ibec", []):
             patch.prepare(self.ctx)
 
+    def _preflight_replacement(self):
+        if not self.ctx.t["volumes"].get("replace_build") or self.ctx.dry_run:
+            return
+        bind_volumes(self.ctx, *self.ctx.t["volumes"]["replace_pair"])
+        self.build()
+        self.ctx.rootfs_dmg("j96")
+        if "ui" in self.ctx.t.get("features", ()):
+            self.ctx.rootfs_dmg(self.ctx.t["ui_resource_profile"])
+
     def all(self):
         """从头端到端：解密 iBSS/iBEC → 进 ramdisk → 重提 IM4M → 安装 → 构建 → 启动。"""
         self._ensure_iboot()
@@ -409,5 +418,7 @@ class Flow:
                                 ("patch-rootfs", self.patch_rootfs), ("build", self.build),
                                 ("boot", self.boot)):
             log.stage(name)
+            if name == "volumes":
+                self._preflight_replacement()
             run_stage()
 

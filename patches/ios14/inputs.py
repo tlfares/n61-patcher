@@ -67,7 +67,10 @@ def prepare(source, archives=None):
             entries = extract(archive, board, version, source / name)
     print("提取 N56 原生硬件输入", flush=True)
     with zipfile.ZipFile(archives["n56"]) as archive:
-        entries = extract(archive, "n56ap", "16H88", source / "n56")
+        manifest = plistlib.loads(archive.read("BuildManifest.plist"))
+        board = next(board for board, product in (("n61ap", "iPhone7,2"), ("n56ap", "iPhone7,1"))
+                     if product in manifest["SupportedProductTypes"])
+        entries = extract(archive, board, "16H88", source / "n56")
         with tempfile.TemporaryDirectory(prefix="n56-fw-", dir=source.parent) as temporary:
             temporary = Path(temporary)
             image = temporary / "n56.dmg"
@@ -77,7 +80,8 @@ def prepare(source, archives=None):
                 output = source / "n56/firmware/C-4345__s-B1"
                 output.mkdir(parents=True, exist_ok=True)
                 for name in ("barbera.trx", "barbera.clmb", "barbera.txcb"):
-                    shutil.copy2(firmware / name, output / name)
+                    native_name = name.replace("barbera", "tempranillo") if board == "n61ap" else name
+                    shutil.copy2(firmware / native_name, output / name)
     return source
 
 

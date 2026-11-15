@@ -13,16 +13,16 @@ FILES = (
 )
 
 
-def _baseband_member(archive):
+def _baseband_member(archive, device_class):
     manifest = plistlib.loads(archive.read("BuildManifest.plist"))
     identity = next(
         item for item in manifest["BuildIdentities"]
-        if item["Info"]["DeviceClass"].lower() == "n56ap"
+        if item["Info"]["DeviceClass"].lower() == device_class.lower()
     )
     return identity["Manifest"]["BasebandFirmware"]["Info"]["Path"]
 
 
-def build_firmware_root(ipsw, output):
+def build_firmware_root(ipsw, output, device_class="n56ap"):
     output = Path(output) / "root"
     local = output / "usr/local/standalone/firmware/Baseband/Mav10"
     standalone = output / "usr/standalone/firmware/Baseband/Mav10"
@@ -32,10 +32,10 @@ def build_firmware_root(ipsw, output):
 
     local.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(ipsw) as archive:
-        with zipfile.ZipFile(BytesIO(archive.read(_baseband_member(archive)))) as firmware:
+        with zipfile.ZipFile(BytesIO(archive.read(_baseband_member(archive, device_class)))) as firmware:
             info = plistlib.loads(firmware.read("Info.plist"))
             if info["com.apple.EmbeddedSoftwareRestore.Baseband.ChipId"] != "0x007F50E1":
-                raise ValueError("N56 baseband firmware has an unexpected chip ID")
+                raise ValueError(f"{device_class} baseband firmware has an unexpected chip ID")
             for name in FILES:
                 path = local / name
                 path.write_bytes(firmware.read(name))

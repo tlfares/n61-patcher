@@ -15,5 +15,6 @@ class DeviceTree(Patch):
         source = Path(ctx.derived_root)
         output = Path(ctx.wk("DeviceTree.raw"))
         patch_native(source / "n56/DeviceTree.jsonc", source / "n66/DeviceTree.jsonc",
-                     Path(ctx.wk("DeviceTree.jsonc")), output, ctx.tool("devicetree-repack"))
+                     Path(ctx.wk("DeviceTree.jsonc")), output, ctx.tool("devicetree-repack"),
+                     touch_compatible=ctx.t["device"]["touch"])
         return str(output)

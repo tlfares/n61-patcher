@@ -77,7 +77,7 @@ def native_files(firmware=None):
 
 
 def adapt(k, files=None, storage=STORAGE, *, header=HEADER, expected_count=645,
-          approved=OLD_HASHES, resize_trx=False):
+          approved=OLD_HASHES, resize_trx=False, resize_unique=False):
     files = native_files() if files is None else files
     before = read_index(k, header, expected_count)
     names = list(approved)
@@ -98,7 +98,7 @@ def adapt(k, files=None, storage=STORAGE, *, header=HEADER, expected_count=645,
         item = files[name]
         if old['digest'].hex() != approved[name]:
             raise ValueError('unexpected original approved digest: ' + name)
-        if old['length'] != item['bytes'] and not (i == 0 and resize_trx):
+        if old['length'] != item['bytes'] and not (resize_trx if i == 0 else resize_unique):
             raise ValueError('native firmware length differs from the approved B1 image')
         blob = storage + i * 36
         struct.pack_into('<I', data, k.offset(blob), 32)
@@ -118,6 +118,8 @@ def adapt(k, files=None, storage=STORAGE, *, header=HEADER, expected_count=645,
             if sum(r['value'] == old['value'] for r in before.values()) != 1:
                 raise ValueError('unexpected shared value for regulatory/TxCap data')
             link, new = old['value'], blob
+            if resize_unique:
+                struct.pack_into('<I', data, k.offset(link + 12), item['bytes'])
         if link not in native_slots:
             raise ValueError('edited pointer lacks native slide ownership')
         prior = struct.unpack('<Q', k.read(link, 8))[0]
@@ -129,7 +131,8 @@ def adapt(k, files=None, storage=STORAGE, *, header=HEADER, expected_count=645,
     if changed != {path_key(name) for name in names}:
         raise ValueError('adaptation changed an unrelated firmware mapping')
     for name, item in files.items():
-        if after[path_key(name)]['digest'].hex() != item['sha256']:
+        if (after[path_key(name)]['digest'].hex() != item['sha256']
+                or after[path_key(name)]['length'] != item['bytes']):
             raise ValueError('native filename mapping mismatch')
     return data, dict(storage=storage, storage_size=0x98, edits=edits,
                       new_slide_slots=[storage + 0x80, storage + 0x90],

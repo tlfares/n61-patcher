@@ -77,23 +77,34 @@ class IndependentInstallation:
         apfs = Apfs(self.ctx)
         volumes = apfs.volumes()
         selected = {kind: named_volume(volumes, name) for kind, name in config["names"].items()}
+        replace_build = config.get("replace_build")
+        if replace_build:
+            pair = tuple(selected[kind][0] if selected[kind] else None for kind in ("system", "data"))
+            if pair != tuple(config["replace_pair"]):
+                log.die("Expected the existing iPhone 6 SystemB/DataB pair on s4/s5")
         for volume in selected.values():
             if volume and volume[0] < config["min_slice"]:
                 log.die(f"{volume_name(volume)} 位于保留卷 s{volume[0]}")
         # 旧的独立卷路径不深度识别：不挂载加密的 DataB（卷名由配置约定，类型未知时只校验名字）。
         infos = inventory(self.ctx, self.session, volumes)
         system = selected["system"]
+        required_system = config.get("require_existing_system")
+        if required_system is not None:
+            if system is None or system[0] != required_system:
+                log.die("Recovery requires the existing iOS 14 SystemB on s4")
+            if not any(v.slice == required_system and v.build == self.ctx.t["build"] for v in infos):
+                log.die("Recovery requires iOS 14.8 to have already been copied to SystemB")
         if system:
             info = next(v for v in infos if v.slice == system[0])
             # 刚由 volumes 建好、还没写系统的卷读不到版本文件，识别为 Unknown，按卷名认。
             if info.kind not in ("System", "Unknown") or info.encrypted:
                 log.die(f"{info.name} 需要是未加密的系统卷")
-            if info.build and info.build != self.ctx.t["build"]:
+            if info.build and info.build != self.ctx.t["build"] and not (create and info.build == replace_build):
                 log.die(f"{info.name} 为 iOS {info.version} ({info.build})，目标为 {self.ctx.t['os_version']}")
         data = selected["data"]
         if data:
             info = next(v for v in infos if v.slice == data[0])
-            if info.kind not in ("Data", "Unknown") or info.build and info.build != self.ctx.t["build"]:
+            if info.kind not in ("Data", "Unknown") or info.build and info.build != self.ctx.t["build"] and not (create and info.build == replace_build):
                 log.die(f"{info.name} 与目标系统的数据卷不符")
         missing = sum(volume is None for volume in selected.values())
         limit = apfs.volume_capacity()
@@ -114,8 +125,45 @@ class IndependentInstallation:
             mode = "encrypted" if self.encrypted_data else "none"
             log.die(f'{config["names"]["data"]} 需要使用 {mode} 保护模式')
         bind_volumes(self.ctx, selected["system"][0], selected["data"][0])
+        if create and replace_build:
+            current = next(v for v in infos if v.slice == system[0]).build
+            if current != self.ctx.t["build"]:
+                self.reset_legacy_pair(legacy_identified=current == replace_build)
         self.save_layout()
         return selected["system"][0], selected["data"][0]
+
+    def reset_legacy_pair(self, legacy_identified):
+        """Clear the verified legacy pair, with both mounts checked before deleting."""
+        self.mount_system()
+        self.mount_data()
+        for index, mountpoint in ((4, "/mnt6"), (5, "/mnt7")):
+            self.session.sh(f'/sbin/mount | grep -q "^/dev/disk0s1s{index} on {mountpoint} "')
+        marker = "/mnt6/.n61-ios14-replacement"
+        if legacy_identified:
+            self.session.sh(f"touch {marker} && sync")
+        else:
+            self.session.sh(f"test -f {marker}")
+        # Some data vaults cannot be removed by the ramdisk. Move their
+        # containing tree out of the active data paths on the same volume.
+        quarantine = "/mnt7/.n61-ios13-quarantine"
+        self.session.sh(
+            f'mkdir -p "{quarantine}" || exit 1; '
+            'for path in /mnt7/.[!.]* /mnt7/..?* /mnt7/*; do '
+            f'case "$path" in /mnt7/keybags|/mnt7/.n61-ios13-MobileAsset|{quarantine}) continue;; esac; '
+            '/bin/rm -rf "$path" && continue; '
+            f'dest="{quarantine}/${{path##*/}}"; '
+            'test ! -e "$dest" && test ! -L "$dest" && '
+            '/bin/mv "$path" "$dest" && test ! -e "$path" && test ! -L "$path" || exit 1; '
+            'done',
+            timeout=3600,
+        )
+        self.session.sh(
+            'for path in /mnt6/.[!.]* /mnt6/..?* /mnt6/*; do '
+            f'case "$path" in {marker}) continue;; esac; '
+            '/bin/rm -rf "$path" || exit 1; done',
+            timeout=3600,
+        )
+        self.session.sync()
 
     def select_slot_volumes(self):
         """宗卷槽位模式：卷号由槽位记录给出，卷必须已存在（由宗卷页面先创建并格式化）。"""

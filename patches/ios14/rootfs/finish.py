@@ -42,7 +42,10 @@ class Finish(Patch):
         installation.mount_data()
         # 加密的 Data 卷要先有 systembag（类密钥），才能写文件内容；先拷 var 会全部 EPERM。
         # 与 iOS 13 的 finish 顺序一致。拷 var 时排除 keybags，不会覆盖刚建的 systembag。
-        ensure_systembag(ctx)
+        if installation.encrypted_data:
+            ensure_systembag(ctx)
+            if ctx.t["volumes"].get("replace_build"):
+                self.prepare_reused_data(ctx)
         ready = session.sh("test -f /mnt7/.n56-ios14-data && echo yes || true").strip()
         if ready != b"yes":
             log.log(f'初始化 Data → s{ctx.t["mounts"]["data_b"]}…')
@@ -57,3 +60,25 @@ class Finish(Patch):
         session.sh("touch /mnt6/.n56-ios14-base")
         session.sync()
         installation.close()
+
+    @staticmethod
+    def prepare_reused_data(ctx):
+        session = ctx.ssh
+        probe = (
+            'probe=/mnt7/.n61-write-probe; '
+            'if (set -C; printf ok > "$probe") 2>/dev/null; then '
+            '/bin/rm -f "$probe" && echo writable; '
+            'elif test -f "$probe" && test ! -s "$probe"; then /bin/rm -f "$probe"; fi'
+        )
+        if session.sh(probe).strip() == b"writable":
+            return
+        # The prior installation's on-disk bag may not unlock class keys in
+        # this ramdisk session. Preserve it before initializing a new one.
+        session.sh(
+            '/sbin/mount | grep -q "^/dev/disk0s1s5 on /mnt7 " && '
+            'test ! -e /mnt7/.n61-ios13-keybags && '
+            '/bin/mv /mnt7/keybags /mnt7/.n61-ios13-keybags'
+        )
+        ensure_systembag(ctx)
+        if session.sh(probe).strip() != b"writable":
+            log.die("DataB still refuses file writes after creating its system keybag")

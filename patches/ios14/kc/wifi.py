@@ -14,5 +14,8 @@ class Wifi(Patch):
 
     def apply(self, ctx, art):
         output = Path(ctx.wk("kc.wifi.raw"))
-        ctx.patch_reports[self.id] = adapt_wifi(art, Path(ctx.derived_root) / "n56/firmware", output)
+        ctx.patch_reports[self.id] = adapt_wifi(
+            art, Path(ctx.derived_root) / "n56/firmware", output,
+            resize_unique=ctx.t["device"]["model"] == "n61ap",
+        )
         return str(output)

@@ -409,31 +409,40 @@ class Ramdisk:
         设备命令自己报错（其他非零退出码）不重发，直接中止。返回设备命令的 stdout。"""
         for attempt in range(1, self.TRIES + 1):
             fallback = attempt == self.TRIES
-            proc = subprocess.Popen((list(self._ssh_base) if fallback else self._bulk_argv()) + [cmd],
-                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            feed_error = None
-            try:
-                feed_error = feed(proc.stdin)
-            except BrokenPipeError:
-                pass
-            finally:
-                try:
-                    proc.stdin.close()
-                except BrokenPipeError:
-                    pass
-            out, err = proc.communicate()
-            if proc.returncode == 0:
+            argv = list(self._ssh_base) if fallback else self._bulk_argv()
+            out, err, returncode, feed_error = self._feed_process(argv + [cmd], feed)
+            if returncode == 0:
                 if feed_error:
                     log.die(f"{what}：本地读取失败\n{feed_error}")
                 return out
-            if proc.returncode != 255:
-                log.die(f"{what}：设备端失败({proc.returncode})\n{(err or b'').decode(errors='replace')}")
+            if returncode != 255:
+                log.die(f"{what}：设备端失败({returncode})\n{(err or b'').decode(errors='replace')}")
             if fallback:
                 log.die(f"{what}：重发 {self.TRIES} 次仍断开\n{(err or b'').decode(errors='replace')}")
             if not self._bulk_alive():
                 self._bulk_ok = None          # 通道整个没了：下次重新起
             log.warn(f"{what}：连接断开，重发（第 {attempt} 次）")
             time.sleep(1)                     # 让设备上被断开的那个进程把已收到的数据处理完再重发
+
+    @staticmethod
+    def _feed_process(argv, feed):
+        # Capture diagnostics without letting a full pipe stall the producer.
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr) as proc:
+                feed_error = None
+                try:
+                    feed_error = feed(proc.stdin)
+                except BrokenPipeError:
+                    pass
+                finally:
+                    try:
+                        proc.stdin.close()
+                    except BrokenPipeError:
+                        pass
+                returncode = proc.wait()
+            stdout.seek(0)
+            stderr.seek(0)
+            return stdout.read(), stderr.read(), returncode, feed_error
 
     def _tar_stream(self, root, entries, dest, uid, gid, recursive):
         if not entries:
@@ -506,12 +515,8 @@ class Ramdisk:
             if bulk:
                 self._send(remote, feed, f"流式写入 {root} → {dest}")
             else:
-                proc = subprocess.Popen(self._ssh_base + [remote], stdin=subprocess.PIPE,
-                                        stderr=subprocess.PIPE)
-                problem = feed(proc.stdin)
-                proc.stdin.close()
-                _, err = proc.communicate()
-                if proc.returncode or problem:
+                _, err, returncode, problem = self._feed_process(self._ssh_base + [remote], feed)
+                if returncode or problem:
                     log.die(f"流式写入失败: {root} → {dest}\n" + (problem or err.decode(errors="replace")))
         finally:
             os.unlink(listing.name)

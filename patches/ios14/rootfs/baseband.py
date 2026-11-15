@@ -30,11 +30,11 @@ class BasebandFirmware(Patch):
         return path if path.is_absolute() else Path(REPO) / "ipsw" / path
 
     def prepare(self, ctx):
-        build_firmware_root(self._ipsw(ctx), Path(ctx.wk("baseband-firmware")))
+        build_firmware_root(self._ipsw(ctx), Path(ctx.wk("baseband-firmware")), ctx.t["device"]["model"])
 
     def apply(self, ctx, art=None):
         root = build_firmware_root(
-            self._ipsw(ctx), Path(ctx.wk("baseband-firmware")))
+            self._ipsw(ctx), Path(ctx.wk("baseband-firmware")), ctx.t["device"]["model"])
         n66 = Path(ctx.mount_rootfs("n66"))
         session = ctx.ssh
         session.mount(ctx.t["mounts"]["system_b"], "/mnt6")

@@ -75,19 +75,19 @@ def copy_wifi(ipsw, dest, work):
         run('hdiutil', 'detach', mountpoint)
 
 
-def decrypt_iboot(ipsw, gaster, patcher, out=OUT):
+def decrypt_iboot(ipsw, gaster, patcher, out=OUT, board="n56"):
     """解密 iBSS/iBEC 并给 iBSS 打补丁。设备需处于 DFU（密钥由设备 AES 引擎解开）。"""
-    dest = out / 'extracted/n56ap_ios12'
+    dest = out / f'extracted/{board}ap_ios12'
     dest.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        ibss = extract_member(ipsw, 'Firmware/dfu/iBSS.n56.RELEASE.im4p', work)
-        ibec = extract_member(ipsw, 'Firmware/dfu/iBEC.n56.RELEASE.im4p', work)
+        ibss = extract_member(ipsw, f'Firmware/dfu/iBSS.{board}.RELEASE.im4p', work)
+        ibec = extract_member(ipsw, f'Firmware/dfu/iBEC.{board}.RELEASE.im4p', work)
         run(gaster, 'pwn')
         run(gaster, 'decrypt', ibss, work / 'iBSS.dec')
-        run(gaster, 'decrypt', ibec, dest / 'iBEC.n56.dec')
-        subprocess.run([str(patcher), str(work / 'iBSS.dec'), str(dest / 'iBSS.n56.patched')], check=False)
-        if not (dest / 'iBSS.n56.patched').exists():
+        run(gaster, 'decrypt', ibec, dest / f'iBEC.{board}.dec')
+        subprocess.run([str(patcher), str(work / 'iBSS.dec'), str(dest / f'iBSS.{board}.patched')], check=False)
+        if not (dest / f'iBSS.{board}.patched').exists():
             raise SystemExit('iBoot64Patcher 未生成 iBSS')
 
 

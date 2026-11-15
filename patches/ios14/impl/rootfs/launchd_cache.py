@@ -47,6 +47,9 @@ def build(ctx, companion=None):
     n66 = Path(ctx.mount_rootfs("n66"))
     launchd = plistlib.loads((j96 / CACHE).read_bytes())
     daemons = launchd["LaunchDaemons"]
+    if ctx.t.get("disable_locationd"):
+        locationd = "/System/Library/LaunchDaemons/com.apple.locationd.plist"
+        daemons[locationd]["Disabled"] = True
     if fairplay_selected(ctx):
         if daemons.pop("/" + FAIRPLAY_OLD, None) is None:
             raise ValueError("J96 launchd 缓存里没有 fairplayd.A2")

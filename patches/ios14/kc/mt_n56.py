@@ -12,4 +12,5 @@ class Touch(Transform):
 
     def transform(self, ctx, kernel, source):
         from patches.shared.impl.kc.sn2400.macho import Kernel
-        return touch(Kernel(source / "n56/kernel.raw"), kernel), {"model": "N56"}
+        model = ctx.t["device"]["model"]
+        return touch(Kernel(source / "n56/kernel.raw"), kernel, model), {"model": model}

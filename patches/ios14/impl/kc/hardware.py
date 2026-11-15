@@ -1,8 +1,8 @@
 """Build the N56 hardware kernel from the J96/N66 iOS 14 inputs."""
-from copy import deepcopy
 import json
 from pathlib import Path
-import plistlib
+import re
+from xml.sax.saxutils import escape
 import shutil
 import subprocess
 import sys
@@ -10,7 +10,6 @@ import sys
 from .boot_volumes import REPO
 sys.path.insert(0, str(REPO / "patches/shared/impl/kc/vibration"))
 from patches.shared.impl.kc.sn2400.macho import Kernel
-from patches.shared.impl.kc.sn2400.port import compact_plist
 from patches.shared.impl.kc.wifi import hashstore_patch as wifi
 from patches.shared.impl.kc.vibration import transplant as vibration
 from .kext import transplant
@@ -36,19 +35,43 @@ WIFI_APPROVED = dict(zip(wifi.OLD_HASHES, (
 )))
 
 
-def touch(native, target):
-    source = next(iter(native.kexts["com.apple.driver.AppleMultitouchSPIN56"]["IOKitPersonalities"].values()))
-    info = deepcopy(target.info)
-    entry = next(e for e in info["_PrelinkInfoDictionary"]
-                 if e["CFBundleIdentifier"] == "com.apple.driver.AppleMultitouchSPIJ96")
-    personality = entry["IOKitPersonalities"]["AppleMultitouchSPI - J96"]
-    for name in ("IONameMatch", "fll-mval", "mt-merge-personality", "ref-clk-div-val", "touch-size-id"):
-        personality[name] = deepcopy(source[name])
-    personality.pop("parser-options", None)
-    xml = vibration.intern_strings(compact_plist(plistlib.dumps(info, sort_keys=False)))
+def touch(native, target, model="n56ap"):
+    source = next(iter(native.kexts[f"com.apple.driver.AppleMultitouchSPI{model[:-2].upper()}"]["IOKitPersonalities"].values()))
+    # Keep Apple's prelink serializer's integer widths and shared IDs intact.
+    pattern = rb'(<key>AppleMultitouchSPI - J96</key><dict>)(.*?)(</dict></dict><key>CFBundleSignature</key>)'
+    matches = list(re.finditer(pattern, target.xml, re.DOTALL))
+    if len(matches) != 1:
+        raise ValueError("Expected exactly one J96 touchscreen personality")
+    match = matches[0]
+    body = match[2]
+
+    def encode(value):
+        if isinstance(value, str):
+            return b"<string>" + escape(value).encode() + b"</string>"
+        if type(value) is int:
+            return f'<integer size="64">{value:#x}</integer>'.encode()
+        if isinstance(value, list):
+            return b"<array>" + b"".join(encode(item) for item in value) + b"</array>"
+        raise ValueError(f"Unsupported touchscreen property type: {type(value)}")
+
+    for name in ("IONameMatch", "fll-mval", "mt-merge-personality", "ref-clk-div-val",
+                 "touch-size-id", "parser-options"):
+        key = f"<key>{name}</key>".encode()
+        field = re.compile(re.escape(key) + rb'(?:<array>.*?</array>|<integer[^>]*(?:/>|>[^<]*</integer>)|<string[^>]*(?:/>|>[^<]*</string>))')
+        old = field.search(body)
+        if old and b' ID="' in old[0]:
+            raise ValueError(f"Touchscreen property {name} owns a shared prelink ID")
+        replacement = key + encode(source[name]) if name != "parser-options" else b""
+        if old:
+            body = body[:old.start()] + replacement + body[old.end():]
+        elif name != "parser-options":
+            if key in body:
+                raise ValueError(f"Unrecognized touchscreen property encoding: {name}")
+            body += replacement
+    xml = target.xml[:match.start(2)] + body + target.xml[match.end(2):]
     segment = next(s for s in target.segs if s["name"] == "__PRELINK_INFO")
     if len(xml) > segment["fs"]:
-        raise ValueError("N56 touch plist exceeds prelink capacity")
+        raise ValueError("Touch plist exceeds prelink capacity")
     data = bytearray(target.data)
     data[segment["fo"]:segment["fo"] + segment["fs"]] = xml.ljust(segment["fs"], b"\0")
     return data
@@ -61,11 +84,11 @@ def driver(input_path, donor_path, bundle, output):
     return report
 
 
-def adapt_wifi(input_path, firmware, output):
+def adapt_wifi(input_path, firmware, output, resize_unique=False):
     target = Kernel(input_path)
     data, report = wifi.adapt(target, wifi.native_files(firmware), 0xfffffff007003be0,
                               header=0xfffffff006d6bcf8, expected_count=642,
-                              approved=WIFI_APPROVED, resize_trx=True)
+                              approved=WIFI_APPROVED, resize_trx=True, resize_unique=resize_unique)
     wifi.add_slide_slots(target, data, report["new_slide_slots"])
     output.write_bytes(data)
     return report

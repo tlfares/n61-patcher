@@ -71,6 +71,8 @@ def build_parser():
     p.add_argument("--system", type=int, default=None, help="独立 System 卷号")
     p.add_argument("--data", type=int, default=None, help="独立 Data 卷号")
     p.add_argument("--workdir", default=None, help="产物工作目录")
+    p.add_argument("--replace-ios13", action="store_true",
+                   help="Erase the existing iPhone 6 iOS 13 SystemB and DataB for iOS 14.8")
     p.add_argument("--keep-data", action="store_true",
                    help="实验性：--slot 安装时不清空 Data 卷（未在设备上验证）")
     p.add_argument("--slot", default=None, metavar="VERSION",
@@ -125,6 +127,15 @@ def make_flow(args):
         if workdir is None:
             workdir = os.path.join(REPO, "build", "slots", args.slot)
     ctx = Context(args.target, workdir=workdir, dry_run=args.dry_run)
+    if getattr(args, "replace_ios13", False):
+        if args.target != "n61-ios14" or args.stage not in ("all", "boot") or args.slot or args.system or args.data:
+            log.die("--replace-ios13 requires n61-ios14 with all or boot and its original s4/s5 pair")
+        if args.data_protection == "none":
+            ctx.t["volumes"].update(names={"system": "SystemB", "data": "Data14"},
+                                    require_existing_system=4)
+        else:
+            ctx.t["volumes"].update(names={"system": "SystemB", "data": "DataB"},
+                                    replace_build="17H35", replace_pair=(4, 5))
     if slot:
         ctx.slot = slot
         ctx.donor_dir = donor

@@ -23,4 +23,4 @@ class BaseStream(Patch):
         log.log(f'写入 14.8 系统 → s{ctx.t["mounts"]["system_b"]}…')
         session.deploy_path(source, "/mnt6")
         session.ensure()
-        session.sh("touch /mnt6/.n56-ios14-rootfs")
+        session.sh("touch /mnt6/.n56-ios14-rootfs && rm -f /mnt6/.n61-ios14-replacement")

@@ -4,6 +4,9 @@ N56 原生（12.5.8）和 N66 都跑 fairplayd.H2，J96 是 iPad 系的 fairplay
 Mach 服务（com.apple.fairplayd、com.apple.fairplayd.versioned、HostSpecialPort 17）。
 13.7 移植删掉 A2、换上 N66 的 H2 后可以激活。
 """
+import plistlib
+from pathlib import Path
+
 from core.overlay import SourceItem, SourceOverlay
 from patches.ios14.impl.rootfs.launchd_cache import CACHE, FAIRPLAY_NEW, FAIRPLAY_OLD, build
 
@@ -34,3 +37,15 @@ class Fairplayd(SourceOverlay):
 
     def derive(self, ctx, name, item):
         return build(ctx)[name]
+
+    def apply(self, ctx, art=None):
+        super().apply(ctx, art)
+        if ctx.t.get("disable_locationd"):
+            relative = "System/Library/LaunchDaemons/com.apple.locationd.plist"
+            job = plistlib.loads((Path(ctx.mount_rootfs("j96")) / relative).read_bytes())
+            job["Disabled"] = True
+            output = Path(ctx.wk("launchd-cache/com.apple.locationd.plist"))
+            output.write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
+            dest = "/mnt6/" + relative
+            ctx.ssh.deploy_path(str(output), dest)
+            ctx.ssh.sh(f'/usr/sbin/chown 0:0 "{dest}" && chmod 644 "{dest}"')

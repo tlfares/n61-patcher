@@ -171,7 +171,7 @@ def port_filesystems(tree: dict, donor_path=None):
             print(f"  ✓ fstab: removed {vol_name} (role 0x{role:x})")
 
 
-def patch_native(base_path=None, donor_path=None, out_json=None, out_binary=None, repack=None):
+def patch_native(base_path=None, donor_path=None, out_json=None, out_binary=None, repack=None, touch_compatible="multi-touch,n56"):
     base_path = base_path or N56_JSONC
     out_json = out_json or OUT_JSONC
     out_binary = out_binary or OUT_BIN
@@ -226,7 +226,7 @@ def patch_native(base_path=None, donor_path=None, out_json=None, out_binary=None
         add_prop(
             touch_node,
             "compatible",
-            "multi-touch,n56\x00multi-touch,j96\x00",
+            f"{touch_compatible}\x00multi-touch,j96\x00",
             32,
             4,
         )

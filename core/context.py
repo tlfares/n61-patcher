@@ -151,7 +151,8 @@ class Context:
         finally:
             sys.path.pop(0)
         log.log("解密 iBSS/iBEC：设备需处于 DFU…")
-        extract_ipsw.decrypt_iboot(self.ipsw_input("n56"), self.tool("gaster"), self.tool("iBoot64Patcher"))
+        extract_ipsw.decrypt_iboot(self.ipsw_input("n56"), self.tool("gaster"), self.tool("iBoot64Patcher"),
+                                  board=self.t["device"]["model"][:-2])
 
     def donor(self, key):
         if key in self.t.get("derived", {}):
@@ -220,7 +221,16 @@ class Context:
 
     def rootfs_dmg(self, kind):
         """rootfs DMG：优先用 ipsw/cache/，否则从 IPSW 提取到该目录。"""
-        entry = self.t.get("source_profiles", {}).get(kind, {}).get("rootfs_entry")
+        profile = self.t.get("source_profiles", {}).get(kind, {})
+        entry = profile.get("rootfs_entry")
+        if not entry and profile.get("device_class"):
+            with zipfile.ZipFile(self.ipsw_input(kind)) as archive:
+                manifest = plistlib.loads(archive.read("BuildManifest.plist"))
+            if manifest["ProductBuildVersion"] != profile["build"]:
+                log.die(f"{kind} requires build {profile['build']}")
+            entry = next(item["Manifest"]["OS"]["Info"]["Path"]
+                         for item in manifest["BuildIdentities"]
+                         if item["Info"]["DeviceClass"].lower() == profile["device_class"])
         if not entry:
             log.die(f"{kind} profile 未声明 rootfs_entry")
         donor_key = kind + "_rootfs_dmg"

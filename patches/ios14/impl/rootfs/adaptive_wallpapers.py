@@ -10,7 +10,13 @@ import plistlib
 import subprocess
 
 SCREEN = "375w-667h@2x~iphone"
-COLORS = ((1510, "Warm"), (1520, "Cool"), (1530, "Neutral"))
+WALLPAPERS = (
+    (1210, "Orange"), (1220, "Green"), (1230, "Blue"), (1240, "Black"),
+    (1510, "Warm"), (1520, "Cool"), (1530, "Neutral"),
+    (1750, "Desert Peak"), (1760, "Desert Tree"), (1770, "Desert Valley"),
+    (1780, "Desert Dome"), (1790, "Lake Cliff"), (1800, "Lake"),
+    (1810, "Lake Desert"), (1820, "Beach"),
+)
 
 
 def convert(source, dest, thumbnail=False):
@@ -40,7 +46,7 @@ def prepare(source_root, output_root):
     destination = output_root / "Library/Wallpaper"
     destination.mkdir(parents=True, exist_ok=True)
     identifiers = []
-    for original_id, color in COLORS:
+    for original_id, color in WALLPAPERS:
         matches = list(source.glob(f"{original_id}.*-{SCREEN}.wallpaper"))
         if len(matches) != 1:
             raise ValueError(f"Expected one {original_id} wallpaper in {source}")
@@ -49,8 +55,9 @@ def prepare(source_root, output_root):
         if not info.get("appearanceAware") or info.get("logicalScreenClass") != SCREEN:
             raise ValueError(f"Unexpected wallpaper profile: {bundle}")
         new_id = original_id + 90000
+        slug = color.lower().replace(" ", "-")
         identifiers.append(new_id)
-        dest = destination / "Stills/iPhone" / f"{new_id}.iOS14_{color}_JPEG-{SCREEN}.wallpaper"
+        dest = destination / "Stills/iPhone" / f"{new_id}.iOS14_{slug}_JPEG-{SCREEN}.wallpaper"
         dest.mkdir(parents=True, exist_ok=True)
         result = copy.deepcopy(info)
         result.update(identifier=new_id, name=f"iOS 14 {color} (JPEG)")
@@ -60,7 +67,7 @@ def prepare(source_root, output_root):
             asset["identifier"] = new_id + (1 if appearance == "default" else 2)
             for key, thumbnail in (("fullSizeImageFileName", False),
                                    ("thumbnailImageFileName", True)):
-                filename = f"{color.lower()}-{suffix}{'-thumbnail' if thumbnail else ''}.jpg"
+                filename = f"{slug}-{suffix}{'-thumbnail' if thumbnail else ''}.jpg"
                 convert(bundle / asset[key], dest / filename, thumbnail)
                 asset[key] = filename
         result["thumbnailImageFileName"] = assets["default"]["thumbnailImageFileName"]

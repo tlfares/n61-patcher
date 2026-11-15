@@ -25,7 +25,7 @@ TARGET["derived"].update(
 # Start with the device adaptations needed to bring up the system. Optional
 # features that embed N56 identities or need hardware validation are opt-in.
 TARGET["features"] = [
-    "core", "charging", "chestnut", "touch", "wifi", "pmu",
+    "core", "charging", "chestnut", "touch", "wifi", "vibration", "pmu",
     "sep", "ans", "checkra1n", "ui", "baseband", "adaptive_wallpapers",
 ]
 

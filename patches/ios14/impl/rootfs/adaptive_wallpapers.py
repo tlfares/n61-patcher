@@ -78,5 +78,8 @@ def prepare(source_root, output_root):
         "wallpaperType": "Still", "path": "Stills/iPhone",
         "order": {"default": identifiers}, "previews": {"default": identifiers[0]},
     }]
-    (destination / "Wallpapers~iphone.plist").write_bytes(plistlib.dumps(catalogue))
+    encoded = plistlib.dumps(catalogue)
+    # The iPad-derived wallpaper picker can still read the iPad catalogue.
+    for idiom in ("iphone", "ipad"):
+        (destination / f"Wallpapers~{idiom}.plist").write_bytes(encoded)
     return output_root

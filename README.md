@@ -1,3 +1,5 @@
+> **iOS 14.8 for iPhone 6:** [View the experimental `port/n61-ios14` branch](https://github.com/tlfares/n61-patcher/tree/port/n61-ios14).
+
 # iPhone 6 iOS 13.7 experimental port
 
 This fork of [CelestialSayuki/n56-patcher](https://github.com/CelestialSayuki/n56-patcher) adds an **iPhone 6, non-Plus (N61AP / iPhone7,2)** profile to the original iPhone 6 Plus project.
